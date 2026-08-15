@@ -1,5 +1,5 @@
 import './App.css'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface DatasetSummary {
   dataset_id: string
@@ -27,11 +27,14 @@ function App() {
   const [fabricResult, setFabricResult] = useState<any>(null)
   const [verifyResult, setVerifyResult] = useState<any>(null)
 
-  const [existingVersionId, setExistingVersionId] = useState('')
-  const [showManualLoad, setShowManualLoad] = useState(false)
-
   const [datasetHistory, setDatasetHistory] = useState<DatasetSummary[]>([])
   const [historyError, setHistoryError] = useState('')
+
+  // Refs let us clear the native file input's displayed filename after we've
+  // consumed the file — React state alone can't do this since file inputs
+  // are uncontrolled.
+  const uploadFileInputRef = useRef<HTMLInputElement>(null)
+  const newVersionFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchDatasetHistory()
@@ -56,12 +59,32 @@ function App() {
     setVerifyResult(null)
   }
 
+  // Turns a failed-response JSON body into a short, readable line instead of
+  // dumping raw JSON in front of the user (and any judges watching).
+  function describeError(data: any, fallback: string): string {
+    if (data && typeof data.detail === 'string') {
+      return data.detail
+    }
+    if (data && typeof data.message === 'string') {
+      return data.message
+    }
+    return fallback
+  }
+
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (file) {
       setSelectedFile(file)
       setStatus('')
       resetAllResults()
+      // Auto-fill the dataset name from the filename so the user doesn't
+      // have to type it manually every time. Only fires if the name field
+      // is currently empty, so it never overwrites something already typed.
+      if (!datasetName) {
+        const nameWithoutExt = file.name.replace(/\.(csv|json)$/i, '')
+        const cleanedName = nameWithoutExt.replace(/[_-]+/g, ' ').trim()
+        setDatasetName(cleanedName)
+      }
     }
   }
 
@@ -90,7 +113,7 @@ function App() {
       const uploadData = await uploadResponse.json()
 
       if (!uploadResponse.ok) {
-        setStatus('Upload failed: ' + JSON.stringify(uploadData))
+        setStatus('Upload failed: ' + describeError(uploadData, 'please check the file and try again.'))
         return
       }
 
@@ -107,6 +130,9 @@ function App() {
       setTrustScore(trustData)
       setDatasetName('')
       setSelectedFile(null)
+      if (uploadFileInputRef.current) {
+        uploadFileInputRef.current.value = ''
+      }
       fetchDatasetHistory()
     } catch (error) {
       setStatus('Error: could not reach backend. Is it running?')
@@ -124,7 +150,7 @@ function App() {
       const trustData = await trustResponse.json()
 
       if (!trustResponse.ok) {
-        setStatus('Could not load version: ' + JSON.stringify(trustData))
+        setStatus('Could not load version: ' + describeError(trustData, 'that version could not be found.'))
         return
       }
 
@@ -151,36 +177,6 @@ function App() {
     await loadVersion(item.dataset_id, item.latest_version_id)
   }
 
-  async function handleLoadExistingVersion() {
-    if (!existingVersionId) {
-      setStatus('Paste a version ID first.')
-      return
-    }
-    // dataset_id isn't known from a bare version_id, so lineage/add-version
-    // stays unavailable for manual loads — use the history list for full features.
-    setStatus('Loading existing version...')
-    resetAllResults()
-    setDatasetId('')
-
-    try {
-      const trustResponse = await fetch(
-        `http://localhost:8000/datasets/versions/${existingVersionId}/trust`
-      )
-      const trustData = await trustResponse.json()
-
-      if (!trustResponse.ok) {
-        setStatus('Could not load version: ' + JSON.stringify(trustData))
-        return
-      }
-
-      setVersionId(existingVersionId)
-      setTrustScore(trustData)
-      setStatus('Loaded. You can now analyze impact or check on-chain status.')
-    } catch (error) {
-      setStatus('Error: could not reach backend.')
-    }
-  }
-
   async function handleAnalyzeImpact() {
     if (!versionId) {
       setStatus('Load a dataset version first.')
@@ -196,6 +192,11 @@ function App() {
       )
       const impactData = await impactResponse.json()
 
+      if (!impactResponse.ok) {
+        setStatus('Could not analyze impact: ' + describeError(impactData, 'please try again.'))
+        return
+      }
+
       setStatus('')
       setImpact(impactData)
     } catch (error) {
@@ -209,18 +210,41 @@ function App() {
       return
     }
 
+    // This permanently flags the currently loaded version as invalid in the
+    // database — it's not something to trigger by accident, especially on a
+    // dataset being used for the live demo.
+    const confirmed = window.confirm(
+      'This will permanently mark the currently loaded version as INVALID. ' +
+        'This cannot be undone from the UI. Continue?'
+    )
+    if (!confirmed) {
+      return
+    }
+
     setStatus('Marking as invalid and analyzing impact...')
     setImpact(null)
 
     try {
-      await fetch(`http://localhost:8000/datasets/versions/${versionId}/invalidate`, {
-        method: 'POST',
-      })
+      const invalidateResponse = await fetch(
+        `http://localhost:8000/datasets/versions/${versionId}/invalidate`,
+        { method: 'POST' }
+      )
+      if (!invalidateResponse.ok) {
+        const invalidateData = await invalidateResponse.json()
+        setStatus('Could not mark invalid: ' + describeError(invalidateData, 'please try again.'))
+        return
+      }
 
       const impactResponse = await fetch(
         `http://localhost:8000/datasets/versions/${versionId}/impact`
       )
       const impactData = await impactResponse.json()
+
+      if (!impactResponse.ok) {
+        setStatus('Marked invalid, but impact analysis failed: ' + describeError(impactData, 'please try again.'))
+        fetchDatasetHistory()
+        return
+      }
 
       setStatus('')
       setImpact(impactData)
@@ -263,12 +287,15 @@ function App() {
       const data = await response.json()
 
       if (!response.ok) {
-        setStatus('Add version failed: ' + JSON.stringify(data))
+        setStatus('Add version failed: ' + describeError(data, 'please check the file and try again.'))
         return
       }
 
       setStatus('New version added successfully.')
       setNewVersionFile(null)
+      if (newVersionFileInputRef.current) {
+        newVersionFileInputRef.current.value = ''
+      }
       handleViewLineage()
       fetchDatasetHistory()
     } catch (error) {
@@ -287,6 +314,12 @@ function App() {
         `http://localhost:8000/datasets/${datasetId}/lineage`
       )
       const data = await response.json()
+
+      if (!response.ok) {
+        setStatus('Could not load lineage: ' + describeError(data, 'please try again.'))
+        return
+      }
+
       setLineage(data)
     } catch (error) {
       setStatus('Error: could not reach backend.')
@@ -311,7 +344,7 @@ function App() {
       const data = await response.json()
 
       if (!response.ok) {
-        setStatus('Register on-chain failed: ' + JSON.stringify(data))
+        setStatus('Register on-chain failed: ' + describeError(data, 'please check the Fabric network and try again.'))
         return
       }
 
@@ -338,7 +371,7 @@ function App() {
       const data = await response.json()
 
       if (!response.ok) {
-        setStatus('Verify on-chain failed: ' + JSON.stringify(data))
+        setStatus('Verify on-chain failed: ' + describeError(data, 'please check the Fabric network and try again.'))
         return
       }
 
@@ -475,23 +508,6 @@ function App() {
             ))}
           </div>
         )}
-
-        <button className="link-button" onClick={() => setShowManualLoad(!showManualLoad)}>
-          {showManualLoad ? 'Hide manual version_id load' : 'Advanced: load by version_id'}
-        </button>
-
-        {showManualLoad && (
-          <div className="manual-load-box">
-            <input
-              type="text"
-              placeholder="Paste an existing version_id"
-              value={existingVersionId}
-              onChange={(e) => setExistingVersionId(e.target.value)}
-              style={{ width: '400px' }}
-            />
-            <button onClick={handleLoadExistingVersion}>Load</button>
-          </div>
-        )}
       </div>
 
       <div className="section">
@@ -504,7 +520,12 @@ function App() {
           value={datasetName}
           onChange={(e) => setDatasetName(e.target.value)}
         />
-        <input type="file" accept=".csv,.json" onChange={handleFileChange} />
+        <input
+          type="file"
+          accept=".csv,.json"
+          onChange={handleFileChange}
+          ref={uploadFileInputRef}
+        />
         <button className="primary" onClick={handleUpload}>
           Upload
         </button>
@@ -534,6 +555,12 @@ function App() {
               Anomaly Risk: {trustScore.breakdown.anomaly_risk.score} —{' '}
               {trustScore.breakdown.anomaly_risk.explanation}
             </li>
+            {trustScore.breakdown.drift && (
+              <li>
+                Drift: {trustScore.breakdown.drift.score} —{' '}
+                {trustScore.breakdown.drift.explanation}
+              </li>
+            )}
           </ul>
 
           <button onClick={handleAnalyzeImpact}>Analyze Impact (as-is)</button>
@@ -572,7 +599,12 @@ function App() {
         <div className="section">
           <h2>Add a New Version</h2>
           <p>Upload a modified/transformed version of the currently loaded dataset.</p>
-          <input type="file" accept=".csv,.json" onChange={handleNewVersionFileChange} />
+          <input
+            type="file"
+            accept=".csv,.json"
+            onChange={handleNewVersionFileChange}
+            ref={newVersionFileInputRef}
+          />
           <button className="primary" onClick={handleAddVersion}>
             Add New Version
           </button>
@@ -583,11 +615,21 @@ function App() {
       {lineage && (
         <div className="section">
           <h2>Lineage — {lineage.versions?.length ?? 0} version(s)</h2>
-          <ul>
+          <ul className="lineage-list">
             {lineage.versions?.map((v: any) => (
-              <li key={v.version_id}>
-                Version {v.version_number} — id: {v.version_id} — parent:{' '}
-                {v.parent_version_id ?? 'none (root)'} — created: {v.created_at}
+              <li key={v.version_id} className="lineage-item">
+                <span>
+                  Version {v.version_number} — parent:{' '}
+                  {v.parent_version_id ?? 'none (root)'} — created: {formatDate(v.created_at)}
+                  {v.version_id === versionId && ' (currently loaded)'}
+                </span>
+                <button
+                  className="primary"
+                  disabled={v.version_id === versionId}
+                  onClick={() => loadVersion(datasetId, v.version_id)}
+                >
+                  {v.version_id === versionId ? 'Loaded' : 'Load'}
+                </button>
               </li>
             ))}
           </ul>
