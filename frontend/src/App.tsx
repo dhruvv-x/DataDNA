@@ -15,16 +15,22 @@ function App() {
   const [fabricResult, setFabricResult] = useState<any>(null)
   const [verifyResult, setVerifyResult] = useState<any>(null)
 
+  const [existingVersionId, setExistingVersionId] = useState('')
+
+  function resetAllResults() {
+    setTrustScore(null)
+    setImpact(null)
+    setLineage(null)
+    setFabricResult(null)
+    setVerifyResult(null)
+  }
+
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (file) {
       setSelectedFile(file)
       setStatus('')
-      setTrustScore(null)
-      setImpact(null)
-      setLineage(null)
-      setFabricResult(null)
-      setVerifyResult(null)
+      resetAllResults()
     }
   }
 
@@ -39,11 +45,7 @@ function App() {
     }
 
     setStatus('Uploading...')
-    setTrustScore(null)
-    setImpact(null)
-    setLineage(null)
-    setFabricResult(null)
-    setVerifyResult(null)
+    resetAllResults()
 
     const formData = new FormData()
     formData.append('file', selectedFile)
@@ -77,9 +79,61 @@ function App() {
     }
   }
 
+  async function handleLoadExistingVersion() {
+    if (!existingVersionId) {
+      setStatus('Paste a version ID first.')
+      return
+    }
+
+    setStatus('Loading existing version...')
+    resetAllResults()
+    setDatasetId('')
+    setVersionId('')
+
+    try {
+      const trustResponse = await fetch(
+        `http://localhost:8000/datasets/versions/${existingVersionId}/trust`
+      )
+      const trustData = await trustResponse.json()
+
+      if (!trustResponse.ok) {
+        setStatus('Could not load version: ' + JSON.stringify(trustData))
+        return
+      }
+
+      setVersionId(existingVersionId)
+      setTrustScore(trustData)
+      setStatus('Loaded. You can now analyze impact or check on-chain status.')
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+
   async function handleAnalyzeImpact() {
     if (!versionId) {
-      setStatus('Upload a dataset first.')
+      setStatus('Upload or load a dataset version first.')
+      return
+    }
+
+    setStatus('Analyzing impact...')
+    setImpact(null)
+
+    try {
+      const impactResponse = await fetch(
+        `http://localhost:8000/datasets/versions/${versionId}/impact`
+      )
+      const impactData = await impactResponse.json()
+
+      setStatus('')
+      setImpact(impactData)
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+
+  async function handleMarkInvalidAndAnalyze() {
+    if (!versionId) {
+      setStatus('Upload or load a dataset version first.')
       return
     }
 
@@ -166,7 +220,7 @@ function App() {
 
   async function handleRegisterOnChain() {
     if (!versionId) {
-      setStatus('Upload a dataset first.')
+      setStatus('Upload or load a dataset version first.')
       return
     }
 
@@ -195,7 +249,7 @@ function App() {
 
   async function handleVerifyOnChain() {
     if (!versionId) {
-      setStatus('Upload a dataset first.')
+      setStatus('Upload or load a dataset version first.')
       return
     }
 
@@ -223,7 +277,22 @@ function App() {
   return (
     <div>
       <h1>DataDNA Dashboard</h1>
-      <p>Upload a dataset to get started.</p>
+
+      <div>
+        <h2>Load an Existing Version (for demo)</h2>
+        <input
+          type="text"
+          placeholder="Paste an existing version_id"
+          value={existingVersionId}
+          onChange={(e) => setExistingVersionId(e.target.value)}
+          style={{ width: '400px' }}
+        />
+        <button onClick={handleLoadExistingVersion}>Load</button>
+      </div>
+
+      <hr />
+
+      <p>Or upload a new dataset to get started.</p>
 
       <input
         type="text"
@@ -259,7 +328,8 @@ function App() {
             </li>
           </ul>
 
-          <button onClick={handleAnalyzeImpact}>
+          <button onClick={handleAnalyzeImpact}>Analyze Impact (as-is)</button>
+          <button onClick={handleMarkInvalidAndAnalyze}>
             Mark as Invalid & Analyze Impact
           </button>
         </div>
