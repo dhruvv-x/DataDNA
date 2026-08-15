@@ -278,7 +278,7 @@ function App() {
     <div>
       <h1>DataDNA Dashboard</h1>
 
-      <div>
+      <div className="section">
         <h2>Load an Existing Version (for demo)</h2>
         <input
           type="text"
@@ -292,22 +292,25 @@ function App() {
 
       <hr />
 
-      <p>Or upload a new dataset to get started.</p>
+      <div className="section">
+        <p>Or upload a new dataset to get started.</p>
 
-      <input
-        type="text"
-        placeholder="Dataset name"
-        value={datasetName}
-        onChange={(e) => setDatasetName(e.target.value)}
-      />
-      <input type="file" onChange={handleFileChange} />
-      <button onClick={handleUpload}>Upload</button>
+        <input
+          type="text"
+          placeholder="Dataset name"
+          value={datasetName}
+          onChange={(e) => setDatasetName(e.target.value)}
+        />
+        <input type="file" accept=".csv,.json" onChange={handleFileChange} />
+        <button onClick={handleUpload}>Upload</button>
 
-      {selectedFile && <p>Selected file: {selectedFile.name}</p>}
+        {selectedFile && <p>Selected file: {selectedFile.name}</p>}
+      </div>
+
       {status && <p>{status}</p>}
 
       {trustScore && (
-        <div>
+        <div className="section">
           <h2>Trust Score: {trustScore.overall_score}/100</h2>
           <ul>
             <li>
@@ -336,7 +339,7 @@ function App() {
       )}
 
       {versionId && (
-        <div>
+        <div className="section">
           <h2>Blockchain Provenance (Hyperledger Fabric)</h2>
           <button onClick={handleRegisterOnChain}>Register On-Chain</button>
           <button onClick={handleVerifyOnChain}>Verify On-Chain</button>
@@ -351,7 +354,7 @@ function App() {
       )}
 
       {impact && (
-        <div>
+        <div className="section">
           <h2>Impact Analysis</h2>
           <p>Severity: {impact.severity}</p>
           <p>Confidence: {impact.confidence}</p>
@@ -363,17 +366,17 @@ function App() {
       )}
 
       {datasetId && (
-        <div>
+        <div className="section">
           <h2>Add a New Version</h2>
           <p>Upload a modified/transformed version of the same dataset.</p>
-          <input type="file" onChange={handleNewVersionFileChange} />
+          <input type="file" accept=".csv,.json" onChange={handleNewVersionFileChange} />
           <button onClick={handleAddVersion}>Add New Version</button>
           <button onClick={handleViewLineage}>View Lineage</button>
         </div>
       )}
 
       {lineage && (
-        <div>
+        <div className="section">
           <h2>Lineage — {lineage.versions?.length ?? 0} version(s)</h2>
           <ul>
             {lineage.versions?.map((v: any) => (
