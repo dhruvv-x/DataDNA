@@ -8,7 +8,6 @@ from app.core.parsing import parse_upload, ParseError
 from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version, get_version
 from app.core.impact import analyze_impact
 from app.core.fabric_client import invoke, query, FabricError
-from app.core.fabric_client import invoke, query, FabricError
 from app.core.audit import run_audit, get_audit
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -143,96 +142,6 @@ async def get_impact_analysis(version_id: str):
         return analyze_impact(version_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.post("/versions/{version_id}/register-onchain")
-async def register_onchain(version_id: str):
-    """
-    Manually register this dataset version's provenance on the Fabric ledger.
-    HACKATHON SIMPLIFICATION: explicit trigger, not automatic on upload —
-    keeps blockchain registration deliberate and demo-controllable.
-    """
-    version = get_version(version_id)
-    if version is None:
-        raise HTTPException(status_code=404, detail="version_id not found")
-    try:
-        result = invoke(
-            "RegisterDatasetVersion",
-            [
-                version["dataset_id"],
-                str(version["version_number"]),
-                version["parent_version_id"] or "",
-                version["dataset_fingerprint"],
-                "",
-                "dhruv",
-                version["created_at"],
-            ],
-        )
-        return {"version_id": version_id, "status": "registered", "fabric_output": result}
-    except FabricError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-
-
-@router.get("/versions/{version_id}/verify-onchain")
-async def verify_onchain(version_id: str):
-    """Query Fabric ledger to verify this version's fingerprint matches on-chain record."""
-    version = get_version(version_id)
-    if version is None:
-        raise HTTPException(status_code=404, detail="version_id not found")
-    try:
-        result = query(
-            "VerifyIntegrity",
-            [version["dataset_id"], str(version["version_number"]), version["dataset_fingerprint"]],
-        )
-        return {"version_id": version_id, "verified": result}
-    except FabricError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-
-
-@router.post("/versions/{version_id}/register-onchain")
-async def register_onchain(version_id: str):
-    """
-    Manually register this dataset version's provenance on the Fabric ledger.
-    HACKATHON SIMPLIFICATION: explicit trigger, not automatic on upload —
-    keeps blockchain registration deliberate and demo-controllable.
-    """
-    try:
-        version = get_version(version_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    try:
-        result = invoke(
-            "RegisterDatasetVersion",
-            [
-                version["dataset_id"],
-                str(version["version_number"]),
-                version["parent_version_id"] or "",
-                version["dataset_fingerprint"],
-                "",
-                "dhruv",
-                version["created_at"],
-            ],
-        )
-        return {"version_id": version_id, "status": "registered", "fabric_output": result}
-    except FabricError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-
-
-@router.get("/versions/{version_id}/verify-onchain")
-async def verify_onchain(version_id: str):
-    """Query Fabric ledger to verify this version's fingerprint matches on-chain record."""
-    try:
-        version = get_version(version_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    try:
-        result = query(
-            "VerifyIntegrity",
-            [version["dataset_id"], str(version["version_number"]), version["dataset_fingerprint"]],
-        )
-        return {"version_id": version_id, "verified": result}
-    except FabricError as e:
-        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.post("/versions/{version_id}/register-onchain")
