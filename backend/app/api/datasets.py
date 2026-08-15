@@ -109,3 +109,13 @@ def get_version_audit(version_id: str):
     if result is None:
         raise HTTPException(status_code=404, detail="No audit found for this version")
     return result
+
+
+@router.get("/versions/{version_id}/trust")
+def get_version_trust_score(version_id: str):
+    """Compute and return the explainable trust score for a dataset version."""
+    from app.core.trust import compute_trust_score
+    try:
+        return compute_trust_score(version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
