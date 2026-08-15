@@ -71,6 +71,18 @@ function App() {
     return fallback
   }
 
+  // Looks up a parent version's number from the currently loaded lineage
+  // array, so the UI can show "Version 2" instead of a raw UUID. Falls back
+  // to "an earlier version" if the parent isn't in the current lineage list
+  // for some reason (shouldn't normally happen).
+  function getParentVersionLabel(parentVersionId: string | null): string {
+    if (!parentVersionId) {
+      return 'none (root)'
+    }
+    const parent = lineage?.versions?.find((v: any) => v.version_id === parentVersionId)
+    return parent ? `Version ${parent.version_number}` : 'an earlier version'
+  }
+
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (file) {
@@ -620,7 +632,8 @@ function App() {
               <li key={v.version_id} className="lineage-item">
                 <span>
                   Version {v.version_number} — parent:{' '}
-                  {v.parent_version_id ?? 'none (root)'} — created: {formatDate(v.created_at)}
+                  {getParentVersionLabel(v.parent_version_id)} — created:{' '}
+                  {formatDate(v.created_at)}
                   {v.version_id === versionId && ' (currently loaded)'}
                 </span>
                 <button
