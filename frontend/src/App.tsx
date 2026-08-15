@@ -83,6 +83,13 @@ function App() {
     return parent ? `Version ${parent.version_number}` : 'an earlier version'
   }
 
+  // Fabric CLI output comes back with raw ANSI color escape codes
+  // (e.g. "\u001b[34m...\u001b[0m") which render as ugly literal characters
+  // in HTML. This strips them so the log line is readable in the UI.
+  function stripAnsiCodes(text: string): string {
+    return text.replace(/\u001b\[[0-9;]*m/g, '')
+  }
+
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (file) {
@@ -590,8 +597,61 @@ function App() {
           </button>
           <button onClick={handleVerifyOnChain}>Verify On-Chain</button>
 
-          {fabricResult && <pre>{JSON.stringify(fabricResult, null, 2)}</pre>}
-          {verifyResult && <pre>{JSON.stringify(verifyResult, null, 2)}</pre>}
+          {fabricResult && (
+            <div className="blockchain-result">
+              <p className="blockchain-status-ok">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M20 6L9 17l-5-5"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                Registered on blockchain
+              </p>
+              <p className="blockchain-detail">Version ID: {fabricResult.version_id}</p>
+              {fabricResult.fabric_output && (
+                <p className="blockchain-detail blockchain-log">
+                  {stripAnsiCodes(String(fabricResult.fabric_output))}
+                </p>
+              )}
+            </div>
+          )}
+
+          {verifyResult && (
+            <div className="blockchain-result">
+              {verifyResult.verified === 'true' || verifyResult.verified === true ? (
+                <p className="blockchain-status-ok">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M20 6L9 17l-5-5"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  Verified — matches blockchain record
+                </p>
+              ) : (
+                <p className="blockchain-status-fail">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M18 6L6 18M6 6l12 12"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  Not verified — mismatch with blockchain record
+                </p>
+              )}
+              <p className="blockchain-detail">Version ID: {verifyResult.version_id}</p>
+            </div>
+          )}
         </div>
       )}
 

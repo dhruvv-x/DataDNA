@@ -332,3 +332,44 @@ pre {
   padding: 8px 0;
   list-style: none;
 }
+.blockchain-result {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background-color: #fafbfd;
+  border: 1px solid #e3e6ee;
+  border-radius: 8px;
+}
+
+.blockchain-result + .blockchain-result {
+  margin-top: 10px;
+}
+
+.blockchain-status-ok,
+.blockchain-status-fail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin: 0 0 6px 0;
+}
+
+.blockchain-status-ok {
+  color: #1a9153;
+}
+
+.blockchain-status-fail {
+  color: #c23a30;
+}
+
+.blockchain-detail {
+  font-size: 0.82rem;
+  color: #8991a3;
+  margin: 4px 0 0 0;
+  font-family: monospace;
+}
+
+.blockchain-log {
+  word-break: break-word;
+  color: #5a6274;
+}
