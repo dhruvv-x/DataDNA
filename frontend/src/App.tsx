@@ -90,6 +90,23 @@ function App() {
     return text.replace(/\u001b\[[0-9;]*m/g, '')
   }
 
+  // Maps a severity/confidence label (HIGH/MEDIUM/LOW) to its badge class.
+  // Falls back to the plain badge style for unexpected values.
+  function severityClass(level: string): string {
+    const normalized = (level || '').toUpperCase()
+    if (normalized === 'HIGH') return 'severity-badge severity-high'
+    if (normalized === 'MEDIUM') return 'severity-badge severity-medium'
+    if (normalized === 'LOW') return 'severity-badge severity-low'
+    return 'severity-badge'
+  }
+
+  // Maps a 0-100 sub-score to a bar-fill color tier.
+  function scoreBarClass(score: number): string {
+    if (score >= 70) return 'score-bar-fill'
+    if (score >= 40) return 'score-bar-fill score-mid'
+    return 'score-bar-fill score-low'
+  }
+
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (file) {
@@ -104,7 +121,6 @@ function App() {
       setDatasetName(cleanedName)
     }
   }
-
 
   // Lets the user clear an accidentally-chosen file before uploading,
   // instead of being forced to pick a replacement file or refresh the page.
@@ -425,12 +441,70 @@ function App() {
     }
   }
 
+  const trustComponents = trustScore
+    ? [
+        ['Integrity', trustScore.breakdown.integrity],
+        ['Quality', trustScore.breakdown.quality],
+        ['Provenance', trustScore.breakdown.provenance],
+        ['Anomaly Risk', trustScore.breakdown.anomaly_risk],
+        ...(trustScore.breakdown.drift ? [['Drift', trustScore.breakdown.drift]] : []),
+      ]
+    : []
+
+  const hasInspectorContent = trustScore || impact || versionId
+
   return (
     <div>
-      <h1>DataDNA Dashboard</h1>
-      <p className="subtitle">
-        AI training-data provenance, trust scoring, and downstream impact tracking
-      </p>
+      <header className="topbar">
+        <svg
+          className="app-logo"
+          width="58"
+          height="58"
+          viewBox="0 0 60 60"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <defs>
+            <linearGradient id="logoGradient" x1="0" y1="0" x2="60" y2="60" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stopColor="#0f6f66" />
+              <stop offset="1" stopColor="#c47f1a" />
+            </linearGradient>
+          </defs>
+          {/* Strand A */}
+          <path
+            d="M30,4 Q44,10 30,18 Q16,26 30,34 Q44,42 30,50 Q16,56 30,54"
+            stroke="url(#logoGradient)"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            fill="none"
+          />
+          {/* Strand B */}
+          <path
+            d="M30,4 Q16,10 30,18 Q44,26 30,34 Q16,42 30,50 Q44,56 30,54"
+            stroke="url(#logoGradient)"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            fill="none"
+            opacity="0.55"
+          />
+          {/* Base-pair rungs, echoing the record-fingerprint concept */}
+          <line x1="18" y1="10" x2="42" y2="10" stroke="url(#logoGradient)" strokeWidth="1.6" opacity="0.7" />
+          <line x1="18" y1="26" x2="42" y2="26" stroke="url(#logoGradient)" strokeWidth="1.6" opacity="0.7" />
+          <line x1="18" y1="42" x2="42" y2="42" stroke="url(#logoGradient)" strokeWidth="1.6" opacity="0.7" />
+          <circle cx="30" cy="4" r="2.4" fill="url(#logoGradient)" />
+          <circle cx="30" cy="18" r="2.4" fill="url(#logoGradient)" />
+          <circle cx="30" cy="34" r="2.4" fill="url(#logoGradient)" />
+          <circle cx="30" cy="50" r="2.4" fill="url(#logoGradient)" />
+        </svg>
+        <div className="topbar-text">
+          <h1>DataDNA</h1>
+          <p className="subtitle">
+            Cryptographic lineage for every dataset — fingerprinted on upload, versioned
+            immutably, and traced through every model it trains, with tamper-evident
+            proof on Hyperledger Fabric at each step.
+          </p>
+        </div>
+      </header>
 
       {datasetHistory.length > 0 && (
         <div className="stats-bar">
@@ -459,287 +533,300 @@ function App() {
         </div>
       )}
 
-      <div className="section">
-        <h2>Your Datasets</h2>
-
-        {historyError && <p className="error-text">{historyError}</p>}
-
-        {!historyError && datasetHistory.length === 0 && (
-          <p>No datasets yet — upload your first one below to get started.</p>
-        )}
-
-        {datasetHistory.length > 0 && (
-          <div className="history-list">
-            {datasetHistory.map((item) => (
-              <div
-                key={item.dataset_id}
-                className={
-                  'history-row' +
-                  (item.dataset_id === datasetId ? ' history-row-active' : '') +
-                  (!item.latest_has_audit ? ' history-row-broken' : '')
-                }
-              >
-                <div className="history-row-main">
-                  <span className="history-name">{item.name}</span>
-                  <span className="history-meta">
-                    {item.version_count} version{item.version_count === 1 ? '' : 's'} · uploaded{' '}
-                    {formatDate(item.created_at)}
-                    {!item.latest_has_audit && ' · no audit data (broken)'}
-                  </span>
-                </div>
-                <div className="history-row-side">
-                  {item.latest_integrity_status && (
-                    <span
-                      className={
-                        'status-badge ' +
-                        (item.latest_integrity_status === 'VERIFIED'
-                          ? 'status-verified'
-                          : 'status-invalid')
-                      }
-                      title={
-                        item.latest_integrity_status === 'VERIFIED'
-                          ? 'No invalidation has been recorded for this version (this is not a blockchain check — see Verify On-Chain for that)'
-                          : 'This version was manually marked invalid for impact analysis'
-                      }
-                    >
-                      {item.latest_integrity_status === 'VERIFIED' ? (
-                        <>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                            <path
-                              d="M20 6L9 17l-5-5"
-                              stroke="currentColor"
-                              strokeWidth="3"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                          ACTIVE
-                        </>
-                      ) : (
-                        <>
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                            <path
-                              d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-                              stroke="currentColor"
-                              strokeWidth="2.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                          FLAGGED INVALID
-                        </>
-                      )}
-                    </span>
-                  )}
-                  <button
-                    className="primary"
-                    disabled={!item.latest_has_audit}
-                    onClick={() => handleLoadFromHistory(item)}
-                  >
-                    Load
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="section">
-        <h2>Upload a New Dataset</h2>
-        <p>Give it a name — this starts a brand new dataset at Version 1.</p>
-
-        <input
-          type="text"
-          placeholder="Dataset name"
-          value={datasetName}
-          onChange={(e) => setDatasetName(e.target.value)}
-        />
-        <input
-          type="file"
-          accept=".csv,.json"
-          onChange={handleFileChange}
-          ref={uploadFileInputRef}
-        />
-        <button className="primary" onClick={handleUpload}>
-          Upload
-        </button>
-
-        {selectedFile && (
-          <p className="selected-file-row">
-            Selected file: {selectedFile.name}
-            <button className="remove-file-button" onClick={handleRemoveSelectedFile}>
-              ✕ Remove
-            </button>
-          </p>
-        )}
-      </div>
-
       {status && <p className="status-text">{status}</p>}
+      {historyError && <p className="error-text">{historyError}</p>}
 
-      {trustScore && (
-        <div className="section">
-          <h2 className="trust-score-heading">Trust Score: {trustScore.overall_score}/100</h2>
-          <ul>
-            <li>
-              Integrity: {trustScore.breakdown.integrity.score} —{' '}
-              {trustScore.breakdown.integrity.explanation}
-            </li>
-            <li>
-              Quality: {trustScore.breakdown.quality.score} —{' '}
-              {trustScore.breakdown.quality.explanation}
-            </li>
-            <li>
-              Provenance: {trustScore.breakdown.provenance.score} —{' '}
-              {trustScore.breakdown.provenance.explanation}
-            </li>
-            <li>
-              Anomaly Risk: {trustScore.breakdown.anomaly_risk.score} —{' '}
-              {trustScore.breakdown.anomaly_risk.explanation}
-            </li>
-            {trustScore.breakdown.drift && (
-              <li>
-                Drift: {trustScore.breakdown.drift.score} —{' '}
-                {trustScore.breakdown.drift.explanation}
-              </li>
+      <div className="dashboard-grid">
+        {/* ============ MAIN COLUMN ============ */}
+        <div className="main-col">
+          <div className="section">
+            <h2>Your Datasets</h2>
+
+            {!historyError && datasetHistory.length === 0 && (
+              <p>No datasets yet — upload your first one below to get started.</p>
             )}
-          </ul>
 
-          <button onClick={handleAnalyzeImpact}>Analyze Impact (as-is)</button>
-          <button onClick={handleMarkInvalidAndAnalyze}>
-            Mark as Invalid & Analyze Impact
-          </button>
-        </div>
-      )}
+            {datasetHistory.length > 0 && (
+              <div className="history-list">
+                {datasetHistory.map((item) => (
+                  <div
+                    key={item.dataset_id}
+                    className={
+                      'history-row' +
+                      (item.dataset_id === datasetId ? ' history-row-active' : '') +
+                      (!item.latest_has_audit ? ' history-row-broken' : '')
+                    }
+                  >
+                    <div className="history-row-main">
+                      <span className="history-name">{item.name}</span>
+                      <span className="history-meta">
+                        {item.version_count} version{item.version_count === 1 ? '' : 's'} · uploaded{' '}
+                        {formatDate(item.created_at)}
+                        {!item.latest_has_audit && ' · no audit data (broken)'}
+                      </span>
+                    </div>
+                    <div className="history-row-side">
+                      {item.latest_integrity_status && (
+                        <span
+                          className={
+                            'status-badge ' +
+                            (item.latest_integrity_status === 'VERIFIED'
+                              ? 'status-verified'
+                              : 'status-invalid')
+                          }
+                          title={
+                            item.latest_integrity_status === 'VERIFIED'
+                              ? 'No invalidation has been recorded for this version (this is not a blockchain check — see Verify On-Chain for that)'
+                              : 'This version was manually marked invalid for impact analysis'
+                          }
+                        >
+                          {item.latest_integrity_status === 'VERIFIED' ? (
+                            <>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                                <path
+                                  d="M20 6L9 17l-5-5"
+                                  stroke="currentColor"
+                                  strokeWidth="3"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                              ACTIVE
+                            </>
+                          ) : (
+                            <>
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                                <path
+                                  d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                                  stroke="currentColor"
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                              FLAGGED INVALID
+                            </>
+                          )}
+                        </span>
+                      )}
+                      <button
+                        className="primary"
+                        disabled={!item.latest_has_audit}
+                        onClick={() => handleLoadFromHistory(item)}
+                      >
+                        Load
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-      {versionId && (
-        <div className="section">
-          <h2>Blockchain Provenance (Hyperledger Fabric)</h2>
-          <button className="primary" onClick={handleRegisterOnChain}>
-            Register On-Chain
-          </button>
-          <button onClick={handleVerifyOnChain}>Verify On-Chain</button>
+          <div className="section">
+            <h2>Upload a New Dataset</h2>
+            <p>Give it a name — this starts a brand new dataset at Version 1.</p>
 
-          {fabricResult && (
-            <div className="blockchain-result">
-              <p className="blockchain-status-ok">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M20 6L9 17l-5-5"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                Registered on blockchain
-              </p>
-              <p className="blockchain-detail">Version ID: {fabricResult.version_id}</p>
-              {fabricResult.fabric_output && (
-                <p className="blockchain-detail blockchain-log">
-                  {stripAnsiCodes(String(fabricResult.fabric_output))}
-                </p>
-              )}
-            </div>
-          )}
+            <input
+              type="text"
+              placeholder="Dataset name"
+              value={datasetName}
+              onChange={(e) => setDatasetName(e.target.value)}
+            />
+            <input
+              type="file"
+              accept=".csv,.json"
+              onChange={handleFileChange}
+              ref={uploadFileInputRef}
+            />
+            <button className="primary" onClick={handleUpload}>
+              Upload
+            </button>
 
-          {verifyResult && (
-            <div className="blockchain-result">
-              {verifyResult.verified === 'true' || verifyResult.verified === true ? (
-                <p className="blockchain-status-ok">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M20 6L9 17l-5-5"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  Verified — matches blockchain record
-                </p>
-              ) : (
-                <p className="blockchain-status-fail">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M18 6L6 18M6 6l12 12"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  Not verified — mismatch with blockchain record
-                </p>
-              )}
-              <p className="blockchain-detail">Version ID: {verifyResult.version_id}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {impact && (
-        <div className="section">
-          <h2>Impact Analysis</h2>
-          <p>Severity: {impact.severity}</p>
-          <p>Confidence: {impact.confidence}</p>
-          <p>Recommendation: {impact.recommendation}</p>
-          <p>Affected models: {impact.affected_model_ids?.length ?? 0}</p>
-          <p>Affected training runs: {impact.affected_training_runs?.length ?? 0}</p>
-          <p>Affected child versions: {impact.affected_child_versions?.length ?? 0}</p>
-        </div>
-      )}
-
-      {datasetId && (
-        <div className="section">
-          <h2>Add a New Version</h2>
-          <p>Upload a modified/transformed version of the currently loaded dataset.</p>
-          <input
-            type="file"
-            accept=".csv,.json"
-            onChange={handleNewVersionFileChange}
-            ref={newVersionFileInputRef}
-          />
-          <button className="primary" onClick={handleAddVersion}>
-            Add New Version
-          </button>
-          <button onClick={handleViewLineage}>View Lineage</button>
-
-          {newVersionFile && (
-            <p className="selected-file-row">
-              Selected file: {newVersionFile.name}
-              <button className="remove-file-button" onClick={handleRemoveNewVersionFile}>
-                ✕ Remove
-              </button>
-            </p>
-          )}
-        </div>
-      )}
-
-      {lineage && (
-        <div className="section">
-          <h2>Lineage — {lineage.versions?.length ?? 0} version(s)</h2>
-          <ul className="lineage-list">
-            {lineage.versions?.map((v: any) => (
-              <li key={v.version_id} className="lineage-item">
-                <span>
-                  Version {v.version_number} — parent:{' '}
-                  {getParentVersionLabel(v.parent_version_id)} — created:{' '}
-                  {formatDate(v.created_at)}
-                  {v.version_id === versionId && ' (currently loaded)'}
-                </span>
-                <button
-                  className="primary"
-                  disabled={v.version_id === versionId}
-                  onClick={() => loadVersion(datasetId, v.version_id)}
-                >
-                  {v.version_id === versionId ? 'Loaded' : 'Load'}
+            {selectedFile && (
+              <p className="selected-file-row">
+                Selected file: {selectedFile.name}
+                <button className="remove-file-button" onClick={handleRemoveSelectedFile}>
+                  ✕ Remove
                 </button>
-              </li>
-            ))}
-          </ul>
+              </p>
+            )}
+          </div>
+
+          {datasetId && (
+            <div className="section">
+              <h2>Add a New Version</h2>
+              <p>Upload a modified/transformed version of the currently loaded dataset.</p>
+              <input
+                type="file"
+                accept=".csv,.json"
+                onChange={handleNewVersionFileChange}
+                ref={newVersionFileInputRef}
+              />
+              <button className="primary" onClick={handleAddVersion}>
+                Add New Version
+              </button>
+              <button onClick={handleViewLineage}>View Lineage</button>
+
+              {newVersionFile && (
+                <p className="selected-file-row">
+                  Selected file: {newVersionFile.name}
+                  <button className="remove-file-button" onClick={handleRemoveNewVersionFile}>
+                    ✕ Remove
+                  </button>
+                </p>
+              )}
+            </div>
+          )}
+
+          {lineage && (
+            <div className="section">
+              <h2>Lineage — {lineage.versions?.length ?? 0} version(s)</h2>
+              <ul className="lineage-list">
+                {lineage.versions?.map((v: any) => (
+                  <li key={v.version_id} className="lineage-item">
+                    <span>
+                      Version {v.version_number} — parent:{' '}
+                      {getParentVersionLabel(v.parent_version_id)} — created:{' '}
+                      {formatDate(v.created_at)}
+                      {v.version_id === versionId && ' (currently loaded)'}
+                    </span>
+                    <button
+                      className="primary"
+                      disabled={v.version_id === versionId}
+                      onClick={() => loadVersion(datasetId, v.version_id)}
+                    >
+                      {v.version_id === versionId ? 'Loaded' : 'Load'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* ============ SIDE COLUMN — INSPECTOR ============ */}
+        <aside className="side-col">
+          {!hasInspectorContent && (
+            <div className="section empty-state">
+              <h2>Inspector</h2>
+              <p>
+                Load a dataset from the list, or upload a new one, to see its trust
+                score, impact analysis, and blockchain record here.
+              </p>
+            </div>
+          )}
+
+          {trustScore && (
+            <div className="section">
+              <h2 className="trust-score-heading">Trust Score: {trustScore.overall_score}/100</h2>
+
+              {trustComponents.map(([label, comp]: any) => (
+                <div className="score-row" key={label}>
+                  <div className="score-row-label">
+                    <span>{label}</span>
+                    <span className="score-row-value">{comp.score}</span>
+                  </div>
+                  <div className="score-bar-track">
+                    <div className={scoreBarClass(comp.score)} style={{ width: `${comp.score}%` }} />
+                  </div>
+                  <p className="score-row-explanation">{comp.explanation}</p>
+                </div>
+              ))}
+
+              <button onClick={handleAnalyzeImpact}>Analyze Impact (as-is)</button>
+              <button className="danger" onClick={handleMarkInvalidAndAnalyze}>
+                Mark as Invalid &amp; Analyze Impact
+              </button>
+            </div>
+          )}
+
+          {impact && (
+            <div className="section">
+              <h2>Impact Analysis</h2>
+              <p>
+                Severity: <span className={severityClass(impact.severity)}>{impact.severity}</span>
+              </p>
+              <p>
+                Confidence:{' '}
+                <span className={severityClass(impact.confidence)}>{impact.confidence}</span>
+              </p>
+              <p>
+                Recommendation: <strong>{impact.recommendation}</strong>
+              </p>
+              <p>Affected models: {impact.affected_model_ids?.length ?? 0}</p>
+              <p>Affected training runs: {impact.affected_training_runs?.length ?? 0}</p>
+              <p>Affected child versions: {impact.affected_child_versions?.length ?? 0}</p>
+            </div>
+          )}
+
+          {versionId && (
+            <div className="section">
+              <h2>Blockchain Provenance</h2>
+              <button className="primary" onClick={handleRegisterOnChain}>
+                Register On-Chain
+              </button>
+              <button onClick={handleVerifyOnChain}>Verify On-Chain</button>
+
+              {fabricResult && (
+                <div className="blockchain-result">
+                  <p className="blockchain-status-ok">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M20 6L9 17l-5-5"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    Registered on blockchain
+                  </p>
+                  <p className="blockchain-detail">Version ID: {fabricResult.version_id}</p>
+                  {fabricResult.fabric_output && (
+                    <p className="blockchain-detail blockchain-log">
+                      {stripAnsiCodes(String(fabricResult.fabric_output))}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {verifyResult && (
+                <div className="blockchain-result">
+                  {verifyResult.verified === 'true' || verifyResult.verified === true ? (
+                    <p className="blockchain-status-ok">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M20 6L9 17l-5-5"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      Verified — matches blockchain record
+                    </p>
+                  ) : (
+                    <p className="blockchain-status-fail">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M18 6L6 18M6 6l12 12"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      Not verified — mismatch with blockchain record
+                    </p>
+                  )}
+                  <p className="blockchain-detail">Version ID: {verifyResult.version_id}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </aside>
+      </div>
     </div>
   )
 }
