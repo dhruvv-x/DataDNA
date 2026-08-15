@@ -6,6 +6,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
 from app.core.parsing import parse_upload, ParseError
 from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version
+from app.core.impact import analyze_impact
 from app.core.audit import run_audit, get_audit
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -126,5 +127,17 @@ async def invalidate_dataset_version(version_id: str):
     """Mark a dataset version as INVALID, for impact analysis testing/demo."""
     try:
         return invalidate_version(version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/versions/{version_id}/impact")
+async def get_impact_analysis(version_id: str):
+    """
+    Trace downstream impact if this dataset version is (or becomes) invalid.
+    Works regardless of current integrity_status — preview mode.
+    """
+    try:
+        return analyze_impact(version_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

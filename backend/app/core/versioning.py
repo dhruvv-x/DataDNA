@@ -122,3 +122,18 @@ def invalidate_version(version_id: str) -> dict:
         "previous_status": row["integrity_status"],
         "integrity_status": "INVALID",
     }
+
+
+def get_version(version_id: str) -> dict:
+    """Fetch a single dataset_version row. Raises ValueError if not found."""
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT version_id, dataset_id, parent_version_id, version_number,
+                  dataset_fingerprint, record_count, created_at, integrity_status
+           FROM dataset_versions WHERE version_id = ?""",
+        (version_id,),
+    ).fetchone()
+    conn.close()
+    if row is None:
+        raise ValueError("version_id not found")
+    return dict(row)
