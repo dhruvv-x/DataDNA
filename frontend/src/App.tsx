@@ -30,6 +30,19 @@ function App() {
   const [datasetHistory, setDatasetHistory] = useState<DatasetSummary[]>([])
   const [historyError, setHistoryError] = useState('')
 
+  // Theme — persisted to localStorage, applied via a data-theme attribute on
+  // <html> so every color in App.css (which reads CSS variables only) flips
+  // in one shot. Defaults to dark if nothing's saved yet.
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem('datadna-theme')
+    return saved === 'light' ? 'light' : 'dark'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('datadna-theme', theme)
+  }, [theme])
+
   // Refs let us clear the native file input's displayed filename after we've
   // consumed the file — React state alone can't do this since file inputs
   // are uncontrolled.
@@ -105,6 +118,19 @@ function App() {
     if (score >= 70) return 'score-bar-fill'
     if (score >= 40) return 'score-bar-fill score-mid'
     return 'score-bar-fill score-low'
+  }
+
+  // Maps a 0-100 trust score to the gauge's ring/verdict color.
+  function trustGaugeColor(score: number): string {
+    if (score >= 70) return 'var(--color-success)'
+    if (score >= 40) return 'var(--color-accent)'
+    return 'var(--color-danger)'
+  }
+
+  function trustVerdictLabel(score: number): string {
+    if (score >= 70) return 'Verified'
+    if (score >= 40) return 'Needs Review'
+    return 'High Risk'
   }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -466,8 +492,8 @@ function App() {
         >
           <defs>
             <linearGradient id="logoGradient" x1="0" y1="0" x2="60" y2="60" gradientUnits="userSpaceOnUse">
-              <stop offset="0" stopColor="#0f6f66" />
-              <stop offset="1" stopColor="#c47f1a" />
+              <stop offset="0" id="logo-stop-a" />
+              <stop offset="1" id="logo-stop-b" />
             </linearGradient>
           </defs>
           {/* Strand A */}
@@ -496,7 +522,9 @@ function App() {
           <circle cx="30" cy="34" r="2.4" fill="url(#logoGradient)" />
           <circle cx="30" cy="50" r="2.4" fill="url(#logoGradient)" />
         </svg>
+
         <div className="topbar-text">
+          <span className="eyebrow">AI Training-Data Provenance · Hyperledger Fabric</span>
           <h1>DataDNA</h1>
           <p className="subtitle">
             Cryptographic lineage for every dataset — fingerprinted on upload, versioned
@@ -504,6 +532,27 @@ function App() {
             proof on Hyperledger Fabric at each step.
           </p>
         </div>
+
+        <button
+          type="button"
+          className="theme-toggle"
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          aria-label="Toggle color theme"
+        >
+          <span className={'theme-toggle-option' + (theme === 'dark' ? ' theme-toggle-option-active' : '')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+            </svg>
+            Dark
+          </span>
+          <span className={'theme-toggle-option' + (theme === 'light' ? ' theme-toggle-option-active' : '')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="5" />
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            </svg>
+            Light
+          </span>
+        </button>
       </header>
 
       {datasetHistory.length > 0 && (
@@ -719,7 +768,33 @@ function App() {
 
           {trustScore && (
             <div className="section">
-              <h2 className="trust-score-heading">Trust Score: {trustScore.overall_score}/100</h2>
+              <h2 className="trust-score-heading">Trust Score</h2>
+
+              <div
+                className="trust-gauge-row"
+                style={
+                  {
+                    '--pct': trustScore.overall_score,
+                    '--gauge-color': trustGaugeColor(trustScore.overall_score),
+                  } as React.CSSProperties
+                }
+              >
+                <div className="trust-gauge">
+                  <div className="trust-gauge-value">
+                    {trustScore.overall_score}
+                    <span>/ 100</span>
+                  </div>
+                </div>
+                <div className="trust-gauge-label">
+                  <span className="trust-gauge-title">Overall Trust</span>
+                  <span
+                    className="trust-gauge-verdict"
+                    style={{ color: trustGaugeColor(trustScore.overall_score) }}
+                  >
+                    {trustVerdictLabel(trustScore.overall_score)}
+                  </span>
+                </div>
+              </div>
 
               {trustComponents.map(([label, comp]: any) => (
                 <div className="score-row" key={label}>
