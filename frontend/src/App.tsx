@@ -129,7 +129,7 @@ function App() {
 
   function trustVerdictLabel(score: number): string {
     if (score >= 70) return 'Verified'
-    if (score >= 40) return 'Needs Review'
+    if (score >= 40) return 'Moderate Trust'
     return 'High Risk'
   }
 
@@ -478,53 +478,56 @@ function App() {
     : []
 
   const hasInspectorContent = trustScore || impact || versionId
+  const hasStatsBar = datasetHistory.length > 0
 
   return (
     <div>
-      <header className="topbar">
-        <svg
-          className="app-logo"
-          width="58"
-          height="58"
-          viewBox="0 0 60 60"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <defs>
-            <linearGradient id="logoGradient" x1="0" y1="0" x2="60" y2="60" gradientUnits="userSpaceOnUse">
-              <stop offset="0" id="logo-stop-a" />
-              <stop offset="1" id="logo-stop-b" />
-            </linearGradient>
-          </defs>
-          {/* Strand A */}
-          <path
-            d="M30,4 Q44,10 30,18 Q16,26 30,34 Q44,42 30,50 Q16,56 30,54"
-            stroke="url(#logoGradient)"
-            strokeWidth="2.6"
-            strokeLinecap="round"
+      <header className={'topbar' + (hasStatsBar ? '' : ' topbar-solo')}>
+        <div className="app-logo-frame">
+          <svg
+            className="app-logo"
+            width="40"
+            height="40"
+            viewBox="0 0 60 60"
             fill="none"
-          />
-          {/* Strand B */}
-          <path
-            d="M30,4 Q16,10 30,18 Q44,26 30,34 Q16,42 30,50 Q44,56 30,54"
-            stroke="url(#logoGradient)"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            fill="none"
-            opacity="0.55"
-          />
-          {/* Base-pair rungs, echoing the record-fingerprint concept */}
-          <line x1="18" y1="10" x2="42" y2="10" stroke="url(#logoGradient)" strokeWidth="1.6" opacity="0.7" />
-          <line x1="18" y1="26" x2="42" y2="26" stroke="url(#logoGradient)" strokeWidth="1.6" opacity="0.7" />
-          <line x1="18" y1="42" x2="42" y2="42" stroke="url(#logoGradient)" strokeWidth="1.6" opacity="0.7" />
-          <circle cx="30" cy="4" r="2.4" fill="url(#logoGradient)" />
-          <circle cx="30" cy="18" r="2.4" fill="url(#logoGradient)" />
-          <circle cx="30" cy="34" r="2.4" fill="url(#logoGradient)" />
-          <circle cx="30" cy="50" r="2.4" fill="url(#logoGradient)" />
-        </svg>
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <defs>
+              <linearGradient id="logoGradient" x1="0" y1="0" x2="60" y2="60" gradientUnits="userSpaceOnUse">
+                <stop offset="0" id="logo-stop-a" />
+                <stop offset="1" id="logo-stop-b" />
+              </linearGradient>
+            </defs>
+            {/* Strand A */}
+            <path
+              d="M30,4 Q44,10 30,18 Q16,26 30,34 Q44,42 30,50 Q16,56 30,54"
+              stroke="url(#logoGradient)"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              fill="none"
+            />
+            {/* Strand B */}
+            <path
+              d="M30,4 Q16,10 30,18 Q44,26 30,34 Q16,42 30,50 Q44,56 30,54"
+              stroke="url(#logoGradient)"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              fill="none"
+              opacity="0.55"
+            />
+            {/* Base-pair rungs, echoing the record-fingerprint concept */}
+            <line x1="18" y1="10" x2="42" y2="10" stroke="url(#logoGradient)" strokeWidth="1.6" opacity="0.7" />
+            <line x1="18" y1="26" x2="42" y2="26" stroke="url(#logoGradient)" strokeWidth="1.6" opacity="0.7" />
+            <line x1="18" y1="42" x2="42" y2="42" stroke="url(#logoGradient)" strokeWidth="1.6" opacity="0.7" />
+            <circle cx="30" cy="4" r="2.4" fill="url(#logoGradient)" />
+            {/* Pulsing node — reads as an active fingerprint scan */}
+            <circle cx="30" cy="18" r="2.4" fill="url(#logoGradient)" className="logo-pulse-node" />
+            <circle cx="30" cy="34" r="2.4" fill="url(#logoGradient)" />
+            <circle cx="30" cy="50" r="2.4" fill="url(#logoGradient)" />
+          </svg>
+        </div>
 
         <div className="topbar-text">
-          <span className="eyebrow">AI Training-Data Provenance · Hyperledger Fabric</span>
           <h1>DataDNA</h1>
           <p className="subtitle">
             Cryptographic lineage for every dataset — fingerprinted on upload, versioned
@@ -555,7 +558,7 @@ function App() {
         </button>
       </header>
 
-      {datasetHistory.length > 0 && (
+      {hasStatsBar && (
         <div className="stats-bar">
           <div className="stat-card">
             <span className="stat-number">{datasetHistory.length}</span>

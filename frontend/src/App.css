@@ -20,6 +20,16 @@
   --content-max: min(1760px, 96vw);
 }
 
+/* Registering --pct as an animatable number lets the trust gauge's
+   conic-gradient interpolate smoothly when the score changes, instead of
+   snapping instantly. Progressive enhancement — unsupported browsers just
+   snap, which is still correct. */
+@property --pct {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
 /* ---------- DARK (default) ---------- */
 :root,
 :root[data-theme='dark'] {
@@ -154,7 +164,10 @@ body {
   overflow: hidden;
 }
 
-.topbar:not(:has(+ .stats-bar)) {
+/* Set by App.tsx (topbar-solo) whenever the stats bar isn't rendered, so
+   the topbar closes its own corners cleanly instead of relying on :has(),
+   which some judge-laptop browsers may not support. */
+.topbar.topbar-solo {
   border-bottom: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   margin-bottom: 22px;
@@ -171,11 +184,54 @@ body {
   box-shadow: 0 0 12px var(--color-primary-glow);
 }
 
-.app-logo {
+/* Logo now sits inside a bordered rounded-square chip instead of floating
+   free against the header — reads as a mark/badge rather than a loose
+   icon. */
+.app-logo-frame {
   flex-shrink: 0;
-  filter: drop-shadow(0 0 10px var(--color-primary-glow));
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: relative;
   z-index: 1;
+  box-shadow: 0 0 20px var(--color-primary-glow);
+}
+
+.app-logo {
+  filter: none;
+}
+
+/* Gradient stops now actually paint the DNA strands, and flip with theme
+   since they read the same tokens as everything else. */
+#logo-stop-a {
+  stop-color: var(--color-primary);
+}
+
+#logo-stop-b {
+  stop-color: var(--color-accent);
+}
+
+/* One node on the logo pulses gently — reads as an active fingerprint
+   scan rather than a static icon. Respects reduced-motion below. */
+.logo-pulse-node {
+  animation: logo-pulse 2.4s ease-in-out infinite;
+  transform-origin: 30px 18px;
+}
+
+@keyframes logo-pulse {
+  0%, 100% {
+    opacity: 1;
+    r: 2.4;
+  }
+  50% {
+    opacity: 0.45;
+    r: 3.4;
+  }
 }
 
 .topbar-text {
@@ -183,29 +239,6 @@ body {
   min-width: 0;
   position: relative;
   z-index: 1;
-}
-
-.eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-primary);
-  margin-bottom: 7px;
-}
-
-.eyebrow::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  box-shadow: 0 0 6px 1px var(--color-primary);
-  flex-shrink: 0;
 }
 
 h1 {
@@ -229,10 +262,6 @@ h1 {
   line-height: 1.55;
 }
 
-.subtitle::after {
-  content: none;
-}
-
 h2 {
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -247,10 +276,6 @@ h2 {
   padding-bottom: 12px;
   padding-left: 12px;
   border-left: 2px solid var(--color-primary);
-}
-
-h2::after {
-  content: none;
 }
 
 p {
@@ -388,12 +413,16 @@ button {
   cursor: pointer;
   margin-right: 8px;
   margin-top: 4px;
-  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
 }
 
 button:hover {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 1px var(--color-primary) inset;
+}
+
+button:active {
+  transform: translateY(1px);
 }
 
 button:focus-visible {
@@ -433,6 +462,7 @@ button:disabled {
   color: var(--color-ink-faint);
   cursor: not-allowed;
   box-shadow: none;
+  transform: none;
 }
 
 button:disabled:hover {
@@ -448,6 +478,18 @@ button:disabled:hover {
   padding: 22px 24px;
   margin-bottom: 20px;
   box-shadow: var(--shadow-card);
+  animation: section-in 0.35s ease both;
+}
+
+@keyframes section-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 ul {
@@ -772,7 +814,6 @@ pre {
 }
 
 .trust-gauge {
-  --pct: 0;
   position: relative;
   width: 104px;
   height: 104px;
@@ -786,6 +827,7 @@ pre {
   align-items: center;
   justify-content: center;
   filter: drop-shadow(0 0 14px var(--gauge-glow, var(--color-primary-glow)));
+  transition: --pct 0.8s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .trust-gauge::before {
@@ -975,8 +1017,11 @@ pre {
   .history-row,
   .score-bar-fill,
   .trust-gauge,
+  .section,
+  .logo-pulse-node,
   body {
     transition: none !important;
+    animation: none !important;
   }
 }
 
@@ -1005,9 +1050,6 @@ pre {
   h1,
   .subtitle {
     text-align: center;
-  }
-  .eyebrow {
-    justify-content: center;
   }
   .theme-toggle {
     margin-top: 4px;
