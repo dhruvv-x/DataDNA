@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.core.db import init_db
 from app.api.datasets import router as datasets_router
+from app.api.training import router as training_router
 
 app = FastAPI(title="DataDNA API")
 
@@ -13,3 +14,4 @@ def health():
     return {"status": "ok", "service": "datadna-api"}
 
 app.include_router(datasets_router)
+app.include_router(training_router)

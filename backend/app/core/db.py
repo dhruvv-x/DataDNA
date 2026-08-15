@@ -48,6 +48,22 @@ CREATE TABLE IF NOT EXISTS audit_results (
     created_at TEXT NOT NULL,
     FOREIGN KEY (dataset_version_id) REFERENCES dataset_versions (version_id)
 );
+CREATE TABLE IF NOT EXISTS models (
+    model_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS training_runs (
+    training_run_id TEXT PRIMARY KEY,
+    dataset_version_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    hyperparameters_json TEXT NOT NULL DEFAULT '{}',
+    actor TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (dataset_version_id) REFERENCES dataset_versions (version_id),
+    FOREIGN KEY (model_id) REFERENCES models (model_id)
+);
 """
 
 
