@@ -37,6 +37,17 @@ CREATE TABLE IF NOT EXISTS records (
     invalidated_reason TEXT,
     FOREIGN KEY (dataset_version_id) REFERENCES dataset_versions (version_id)
 );
+CREATE TABLE IF NOT EXISTS audit_results (
+    audit_id TEXT PRIMARY KEY,
+    dataset_version_id TEXT NOT NULL,
+    total_records INTEGER NOT NULL,
+    missing_values_json TEXT NOT NULL,
+    duplicate_count INTEGER NOT NULL,
+    outliers_json TEXT NOT NULL,
+    schema_issues_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (dataset_version_id) REFERENCES dataset_versions (version_id)
+);
 """
 
 
