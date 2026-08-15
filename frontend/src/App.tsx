@@ -360,6 +360,36 @@ function App() {
   return (
     <div>
       <h1>DataDNA Dashboard</h1>
+      <p className="subtitle">
+        AI training-data provenance, trust scoring, and downstream impact tracking
+      </p>
+
+      {datasetHistory.length > 0 && (
+        <div className="stats-bar">
+          <div className="stat-card">
+            <span className="stat-number">{datasetHistory.length}</span>
+            <span className="stat-label">Total Datasets</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-number stat-good">
+              {datasetHistory.filter((d) => d.latest_integrity_status === 'VERIFIED').length}
+            </span>
+            <span className="stat-label">Active</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-number stat-bad">
+              {datasetHistory.filter((d) => d.latest_integrity_status !== 'VERIFIED').length}
+            </span>
+            <span className="stat-label">Flagged Invalid</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-number">
+              {datasetHistory.reduce((sum, d) => sum + d.version_count, 0)}
+            </span>
+            <span className="stat-label">Total Versions</span>
+          </div>
+        </div>
+      )}
 
       <div className="section">
         <h2>Your Datasets</h2>
@@ -404,7 +434,33 @@ function App() {
                           : 'This version was manually marked invalid for impact analysis'
                       }
                     >
-                      {item.latest_integrity_status === 'VERIFIED' ? 'ACTIVE' : 'FLAGGED INVALID'}
+                      {item.latest_integrity_status === 'VERIFIED' ? (
+                        <>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                            <path
+                              d="M20 6L9 17l-5-5"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          ACTIVE
+                        </>
+                      ) : (
+                        <>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                            <path
+                              d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          FLAGGED INVALID
+                        </>
+                      )}
                     </span>
                   )}
                   <button
