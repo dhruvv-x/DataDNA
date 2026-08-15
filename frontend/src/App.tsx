@@ -1,4 +1,16 @@
-import { useState } from 'react'
+import './App.css'
+import { useState, useEffect } from 'react'
+
+interface DatasetSummary {
+  dataset_id: string
+  name: string
+  created_at: string
+  version_count: number
+  latest_version_id: string | null
+  latest_version_number: number | null
+  latest_integrity_status: string | null
+  latest_has_audit: boolean
+}
 
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -16,6 +28,25 @@ function App() {
   const [verifyResult, setVerifyResult] = useState<any>(null)
 
   const [existingVersionId, setExistingVersionId] = useState('')
+  const [showManualLoad, setShowManualLoad] = useState(false)
+
+  const [datasetHistory, setDatasetHistory] = useState<DatasetSummary[]>([])
+  const [historyError, setHistoryError] = useState('')
+
+  useEffect(() => {
+    fetchDatasetHistory()
+  }, [])
+
+  async function fetchDatasetHistory() {
+    try {
+      const response = await fetch('http://localhost:8000/datasets')
+      const data = await response.json()
+      setDatasetHistory(data.datasets || [])
+      setHistoryError('')
+    } catch (error) {
+      setHistoryError('Could not load dataset history. Is the backend running?')
+    }
+  }
 
   function resetAllResults() {
     setTrustScore(null)
@@ -74,9 +105,50 @@ function App() {
 
       setStatus('')
       setTrustScore(trustData)
+      setDatasetName('')
+      setSelectedFile(null)
+      fetchDatasetHistory()
     } catch (error) {
       setStatus('Error: could not reach backend. Is it running?')
     }
+  }
+
+  async function loadVersion(targetDatasetId: string, targetVersionId: string) {
+    setStatus('Loading version...')
+    resetAllResults()
+
+    try {
+      const trustResponse = await fetch(
+        `http://localhost:8000/datasets/versions/${targetVersionId}/trust`
+      )
+      const trustData = await trustResponse.json()
+
+      if (!trustResponse.ok) {
+        setStatus('Could not load version: ' + JSON.stringify(trustData))
+        return
+      }
+
+      setDatasetId(targetDatasetId)
+      setVersionId(targetVersionId)
+      setTrustScore(trustData)
+      setStatus('')
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+
+  async function handleLoadFromHistory(item: DatasetSummary) {
+    if (!item.latest_version_id) {
+      setStatus('This dataset has no versions yet.')
+      return
+    }
+    if (!item.latest_has_audit) {
+      setStatus(
+        `"${item.name}" has no audit data on its latest version (likely leftover from early testing) — it can't be loaded. Use the cleanup script to remove it, or re-upload it as a fresh dataset.`
+      )
+      return
+    }
+    await loadVersion(item.dataset_id, item.latest_version_id)
   }
 
   async function handleLoadExistingVersion() {
@@ -84,11 +156,11 @@ function App() {
       setStatus('Paste a version ID first.')
       return
     }
-
+    // dataset_id isn't known from a bare version_id, so lineage/add-version
+    // stays unavailable for manual loads — use the history list for full features.
     setStatus('Loading existing version...')
     resetAllResults()
     setDatasetId('')
-    setVersionId('')
 
     try {
       const trustResponse = await fetch(
@@ -111,7 +183,7 @@ function App() {
 
   async function handleAnalyzeImpact() {
     if (!versionId) {
-      setStatus('Upload or load a dataset version first.')
+      setStatus('Load a dataset version first.')
       return
     }
 
@@ -133,7 +205,7 @@ function App() {
 
   async function handleMarkInvalidAndAnalyze() {
     if (!versionId) {
-      setStatus('Upload or load a dataset version first.')
+      setStatus('Load a dataset version first.')
       return
     }
 
@@ -152,6 +224,7 @@ function App() {
 
       setStatus('')
       setImpact(impactData)
+      fetchDatasetHistory()
     } catch (error) {
       setStatus('Error: could not reach backend.')
     }
@@ -166,7 +239,7 @@ function App() {
 
   async function handleAddVersion() {
     if (!datasetId) {
-      setStatus('Upload an initial dataset first.')
+      setStatus('Load a dataset from history first.')
       return
     }
     if (!newVersionFile) {
@@ -195,7 +268,9 @@ function App() {
       }
 
       setStatus('New version added successfully.')
+      setNewVersionFile(null)
       handleViewLineage()
+      fetchDatasetHistory()
     } catch (error) {
       setStatus('Error: could not reach backend.')
     }
@@ -203,7 +278,7 @@ function App() {
 
   async function handleViewLineage() {
     if (!datasetId) {
-      setStatus('Upload a dataset first.')
+      setStatus('Load a dataset first.')
       return
     }
 
@@ -220,7 +295,7 @@ function App() {
 
   async function handleRegisterOnChain() {
     if (!versionId) {
-      setStatus('Upload or load a dataset version first.')
+      setStatus('Load a dataset version first.')
       return
     }
 
@@ -249,7 +324,7 @@ function App() {
 
   async function handleVerifyOnChain() {
     if (!versionId) {
-      setStatus('Upload or load a dataset version first.')
+      setStatus('Load a dataset version first.')
       return
     }
 
@@ -274,26 +349,98 @@ function App() {
     }
   }
 
+  function formatDate(iso: string) {
+    try {
+      return new Date(iso).toLocaleString()
+    } catch {
+      return iso
+    }
+  }
+
   return (
     <div>
       <h1>DataDNA Dashboard</h1>
 
       <div className="section">
-        <h2>Load an Existing Version (for demo)</h2>
-        <input
-          type="text"
-          placeholder="Paste an existing version_id"
-          value={existingVersionId}
-          onChange={(e) => setExistingVersionId(e.target.value)}
-          style={{ width: '400px' }}
-        />
-        <button onClick={handleLoadExistingVersion}>Load</button>
+        <h2>Your Datasets</h2>
+
+        {historyError && <p className="error-text">{historyError}</p>}
+
+        {!historyError && datasetHistory.length === 0 && (
+          <p>No datasets yet — upload your first one below to get started.</p>
+        )}
+
+        {datasetHistory.length > 0 && (
+          <div className="history-list">
+            {datasetHistory.map((item) => (
+              <div
+                key={item.dataset_id}
+                className={
+                  'history-row' +
+                  (item.dataset_id === datasetId ? ' history-row-active' : '') +
+                  (!item.latest_has_audit ? ' history-row-broken' : '')
+                }
+              >
+                <div className="history-row-main">
+                  <span className="history-name">{item.name}</span>
+                  <span className="history-meta">
+                    {item.version_count} version{item.version_count === 1 ? '' : 's'} · uploaded{' '}
+                    {formatDate(item.created_at)}
+                    {!item.latest_has_audit && ' · no audit data (broken)'}
+                  </span>
+                </div>
+                <div className="history-row-side">
+                  {item.latest_integrity_status && (
+                    <span
+                      className={
+                        'status-badge ' +
+                        (item.latest_integrity_status === 'VERIFIED'
+                          ? 'status-verified'
+                          : 'status-invalid')
+                      }
+                      title={
+                        item.latest_integrity_status === 'VERIFIED'
+                          ? 'No invalidation has been recorded for this version (this is not a blockchain check — see Verify On-Chain for that)'
+                          : 'This version was manually marked invalid for impact analysis'
+                      }
+                    >
+                      {item.latest_integrity_status === 'VERIFIED' ? 'ACTIVE' : 'FLAGGED INVALID'}
+                    </span>
+                  )}
+                  <button
+                    className="primary"
+                    disabled={!item.latest_has_audit}
+                    onClick={() => handleLoadFromHistory(item)}
+                  >
+                    Load
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button className="link-button" onClick={() => setShowManualLoad(!showManualLoad)}>
+          {showManualLoad ? 'Hide manual version_id load' : 'Advanced: load by version_id'}
+        </button>
+
+        {showManualLoad && (
+          <div className="manual-load-box">
+            <input
+              type="text"
+              placeholder="Paste an existing version_id"
+              value={existingVersionId}
+              onChange={(e) => setExistingVersionId(e.target.value)}
+              style={{ width: '400px' }}
+            />
+            <button onClick={handleLoadExistingVersion}>Load</button>
+          </div>
+        )}
       </div>
 
-      <hr />
-
       <div className="section">
-        <p>Or upload a new dataset to get started.</p>
+        <h2>Upload a New Dataset</h2>
+        <p>Give it a name — this starts a brand new dataset at Version 1.</p>
 
         <input
           type="text"
@@ -302,16 +449,18 @@ function App() {
           onChange={(e) => setDatasetName(e.target.value)}
         />
         <input type="file" accept=".csv,.json" onChange={handleFileChange} />
-        <button onClick={handleUpload}>Upload</button>
+        <button className="primary" onClick={handleUpload}>
+          Upload
+        </button>
 
         {selectedFile && <p>Selected file: {selectedFile.name}</p>}
       </div>
 
-      {status && <p>{status}</p>}
+      {status && <p className="status-text">{status}</p>}
 
       {trustScore && (
         <div className="section">
-          <h2>Trust Score: {trustScore.overall_score}/100</h2>
+          <h2 className="trust-score-heading">Trust Score: {trustScore.overall_score}/100</h2>
           <ul>
             <li>
               Integrity: {trustScore.breakdown.integrity.score} —{' '}
@@ -341,15 +490,13 @@ function App() {
       {versionId && (
         <div className="section">
           <h2>Blockchain Provenance (Hyperledger Fabric)</h2>
-          <button onClick={handleRegisterOnChain}>Register On-Chain</button>
+          <button className="primary" onClick={handleRegisterOnChain}>
+            Register On-Chain
+          </button>
           <button onClick={handleVerifyOnChain}>Verify On-Chain</button>
 
-          {fabricResult && (
-            <p>Register result: {JSON.stringify(fabricResult)}</p>
-          )}
-          {verifyResult && (
-            <p>Verify result: {JSON.stringify(verifyResult)}</p>
-          )}
+          {fabricResult && <pre>{JSON.stringify(fabricResult, null, 2)}</pre>}
+          {verifyResult && <pre>{JSON.stringify(verifyResult, null, 2)}</pre>}
         </div>
       )}
 
@@ -368,9 +515,11 @@ function App() {
       {datasetId && (
         <div className="section">
           <h2>Add a New Version</h2>
-          <p>Upload a modified/transformed version of the same dataset.</p>
+          <p>Upload a modified/transformed version of the currently loaded dataset.</p>
           <input type="file" accept=".csv,.json" onChange={handleNewVersionFileChange} />
-          <button onClick={handleAddVersion}>Add New Version</button>
+          <button className="primary" onClick={handleAddVersion}>
+            Add New Version
+          </button>
           <button onClick={handleViewLineage}>View Lineage</button>
         </div>
       )}

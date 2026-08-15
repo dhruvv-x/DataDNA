@@ -86,6 +86,44 @@ def create_version(dataset_id: str, records: list, parent_version_id: str = None
     }
 
 
+def list_all_datasets() -> list:
+    """
+    Return a summary of every dataset with its latest version info,
+    newest dataset first. Powers the dashboard history panel so users
+    never need to manually paste a version_id.
+    HACKATHON SIMPLIFICATION: N+1 query via get_lineage() per dataset —
+    fine at demo scale (tens of datasets), would need a single JOIN
+    query at real production scale.
+    """
+    from app.core.audit import get_audit
+
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT dataset_id, name, created_at FROM datasets ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+
+    datasets = []
+    for row in rows:
+        dataset_id = row["dataset_id"]
+        lineage = get_lineage(dataset_id)
+        latest = lineage[-1] if lineage else None
+        latest_has_audit = False
+        if latest:
+            latest_has_audit = get_audit(latest["version_id"]) is not None
+        datasets.append({
+            "dataset_id": dataset_id,
+            "name": row["name"],
+            "created_at": row["created_at"],
+            "version_count": len(lineage),
+            "latest_version_id": latest["version_id"] if latest else None,
+            "latest_version_number": latest["version_number"] if latest else None,
+            "latest_integrity_status": latest["integrity_status"] if latest else None,
+            "latest_has_audit": latest_has_audit,
+        })
+    return datasets
+
+
 def get_lineage(dataset_id: str) -> list:
     """Return full version chain for a dataset, oldest first."""
     conn = get_connection()

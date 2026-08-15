@@ -5,12 +5,18 @@ Dataset upload API endpoints.
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
 from app.core.parsing import parse_upload, ParseError
-from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version, get_version
+from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version, get_version, list_all_datasets
 from app.core.impact import analyze_impact
 from app.core.fabric_client import invoke, query, FabricError
 from app.core.audit import run_audit, get_audit
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
+
+
+@router.get("")
+def list_datasets():
+    """List every dataset with its latest version summary — powers the dashboard history panel."""
+    return {"datasets": list_all_datasets()}
 
 
 @router.post("")
