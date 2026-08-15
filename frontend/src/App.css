@@ -698,7 +698,28 @@ pre {
   border-left-color: transparent;
   background-color: var(--color-surface-alt);
 }
+/* Flagged-invalid rows get their own accent so the eye catches trouble
+   rows even before reading the badge text. */
+.history-row-flagged {
+  border-left-color: var(--color-danger-border);
+}
 
+.history-row-flagged:hover {
+  border-left-color: var(--color-danger);
+}
+
+.history-row-flagged.history-row-active {
+  border-left-color: var(--color-danger);
+  box-shadow: 0 0 0 1px var(--color-danger) inset;
+}
+
+.history-row {
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+}
+
+.history-row:hover:not(.history-row-broken) {
+  transform: translateX(2px);
+}
 /* STATUS BADGES — stamped tag, not a soft pill */
 .status-badge {
   display: inline-flex;
@@ -1086,5 +1107,114 @@ pre {
   .trust-gauge-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+/* IMPACT ANALYSIS — badge pair, recommendation banner, stat chips */
+.impact-badge-row {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.impact-badge-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.impact-badge-label {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+.impact-recommendation {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-alt);
+  border-left: 3px solid var(--color-border-strong);
+  margin-bottom: 18px;
+}
+
+.impact-recommendation-high {
+  border-left-color: var(--color-danger);
+  background-color: var(--color-danger-bg);
+}
+
+.impact-recommendation-medium {
+  border-left-color: var(--color-warning);
+  background-color: var(--color-warning-bg);
+}
+
+.impact-recommendation-low {
+  border-left-color: var(--color-success);
+  background-color: var(--color-success-bg);
+}
+
+.impact-recommendation-label {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+.impact-recommendation-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--color-ink);
+}
+
+.impact-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.impact-stat-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  color: var(--color-primary);
+}
+
+.impact-stat-value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--color-ink);
+}
+
+.impact-stat-label {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .impact-stats-row {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .impact-stat-chip {
+    padding: 10px 4px;
   }
 }

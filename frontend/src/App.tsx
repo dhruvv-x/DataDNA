@@ -606,7 +606,8 @@ function App() {
                     className={
                       'history-row' +
                       (item.dataset_id === datasetId ? ' history-row-active' : '') +
-                      (!item.latest_has_audit ? ' history-row-broken' : '')
+                      (!item.latest_has_audit ? ' history-row-broken' : '') +
+                      (item.latest_integrity_status === 'INVALID' ? ' history-row-flagged' : '')
                     }
                   >
                     <div className="history-row-main">
@@ -822,19 +823,50 @@ function App() {
           {impact && (
             <div className="section">
               <h2>Impact Analysis</h2>
-              <p>
-                Severity: <span className={severityClass(impact.severity)}>{impact.severity}</span>
-              </p>
-              <p>
-                Confidence:{' '}
-                <span className={severityClass(impact.confidence)}>{impact.confidence}</span>
-              </p>
-              <p>
-                Recommendation: <strong>{impact.recommendation}</strong>
-              </p>
-              <p>Affected models: {impact.affected_model_ids?.length ?? 0}</p>
-              <p>Affected training runs: {impact.affected_training_runs?.length ?? 0}</p>
-              <p>Affected child versions: {impact.affected_child_versions?.length ?? 0}</p>
+
+              <div className="impact-badge-row">
+                <div className="impact-badge-block">
+                  <span className="impact-badge-label">Severity</span>
+                  <span className={severityClass(impact.severity)}>{impact.severity}</span>
+                </div>
+                <div className="impact-badge-block">
+                  <span className="impact-badge-label">Confidence</span>
+                  <span className={severityClass(impact.confidence)}>{impact.confidence}</span>
+                </div>
+              </div>
+
+              <div className={'impact-recommendation impact-recommendation-' + (impact.severity || '').toLowerCase()}>
+                <span className="impact-recommendation-label">Recommended Action</span>
+                <span className="impact-recommendation-value">{impact.recommendation}</span>
+              </div>
+
+              <div className="impact-stats-row">
+                <div className="impact-stat-chip">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="14" width="7" height="7" rx="1" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" />
+                  </svg>
+                  <span className="impact-stat-value">{impact.affected_model_ids?.length ?? 0}</span>
+                  <span className="impact-stat-label">Models</span>
+                </div>
+                <div className="impact-stat-chip">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 3" />
+                  </svg>
+                  <span className="impact-stat-value">{impact.affected_training_runs?.length ?? 0}</span>
+                  <span className="impact-stat-label">Training Runs</span>
+                </div>
+                <div className="impact-stat-chip">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 3v18M9 3l6 4.5L9 12l6 4.5L9 21" />
+                  </svg>
+                  <span className="impact-stat-value">{impact.affected_child_versions?.length ?? 0}</span>
+                  <span className="impact-stat-label">Child Versions</span>
+                </div>
+              </div>
             </div>
           )}
 
