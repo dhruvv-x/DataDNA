@@ -99,3 +99,26 @@ def get_lineage(dataset_id: str) -> list:
     ).fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def invalidate_version(version_id: str) -> dict:
+    """Mark a dataset version as INVALID. Raises ValueError if not found."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT version_id, integrity_status FROM dataset_versions WHERE version_id = ?",
+        (version_id,),
+    ).fetchone()
+    if row is None:
+        conn.close()
+        raise ValueError("version_id not found")
+    conn.execute(
+        "UPDATE dataset_versions SET integrity_status = ? WHERE version_id = ?",
+        ("INVALID", version_id),
+    )
+    conn.commit()
+    conn.close()
+    return {
+        "version_id": version_id,
+        "previous_status": row["integrity_status"],
+        "integrity_status": "INVALID",
+    }

@@ -5,7 +5,7 @@ Dataset upload API endpoints.
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
 from app.core.parsing import parse_upload, ParseError
-from app.core.versioning import create_dataset, create_version, get_lineage
+from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version
 from app.core.audit import run_audit, get_audit
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -117,5 +117,14 @@ def get_version_trust_score(version_id: str):
     from app.core.trust import compute_trust_score
     try:
         return compute_trust_score(version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/versions/{version_id}/invalidate")
+async def invalidate_dataset_version(version_id: str):
+    """Mark a dataset version as INVALID, for impact analysis testing/demo."""
+    try:
+        return invalidate_version(version_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
