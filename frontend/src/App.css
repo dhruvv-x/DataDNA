@@ -373,3 +373,26 @@ pre {
   word-break: break-word;
   color: #5a6274;
 }
+.selected-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.remove-file-button {
+  background: none;
+  border: none;
+  color: #c23a30;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0;
+  text-decoration: underline;
+}
+
+.remove-file-button:hover {
+  background: none;
+  color: #a12d24;
+  transform: none;
+}

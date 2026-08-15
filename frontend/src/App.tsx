@@ -96,14 +96,30 @@ function App() {
       setSelectedFile(file)
       setStatus('')
       resetAllResults()
-      // Auto-fill the dataset name from the filename so the user doesn't
-      // have to type it manually every time. Only fires if the name field
-      // is currently empty, so it never overwrites something already typed.
-      if (!datasetName) {
-        const nameWithoutExt = file.name.replace(/\.(csv|json)$/i, '')
-        const cleanedName = nameWithoutExt.replace(/[_-]+/g, ' ').trim()
-        setDatasetName(cleanedName)
-      }
+      // Auto-fill the dataset name from the filename every time a new file
+      // is chosen — this always reflects the currently selected file,
+      // rather than only filling an empty field.
+      const nameWithoutExt = file.name.replace(/\.(csv|json)$/i, '')
+      const cleanedName = nameWithoutExt.replace(/[_-]+/g, ' ').trim()
+      setDatasetName(cleanedName)
+    }
+  }
+
+
+  // Lets the user clear an accidentally-chosen file before uploading,
+  // instead of being forced to pick a replacement file or refresh the page.
+  function handleRemoveSelectedFile() {
+    setSelectedFile(null)
+    setDatasetName('')
+    if (uploadFileInputRef.current) {
+      uploadFileInputRef.current.value = ''
+    }
+  }
+
+  function handleRemoveNewVersionFile() {
+    setNewVersionFile(null)
+    if (newVersionFileInputRef.current) {
+      newVersionFileInputRef.current.value = ''
     }
   }
 
@@ -549,7 +565,14 @@ function App() {
           Upload
         </button>
 
-        {selectedFile && <p>Selected file: {selectedFile.name}</p>}
+        {selectedFile && (
+          <p className="selected-file-row">
+            Selected file: {selectedFile.name}
+            <button className="remove-file-button" onClick={handleRemoveSelectedFile}>
+              ✕ Remove
+            </button>
+          </p>
+        )}
       </div>
 
       {status && <p className="status-text">{status}</p>}
@@ -681,6 +704,15 @@ function App() {
             Add New Version
           </button>
           <button onClick={handleViewLineage}>View Lineage</button>
+
+          {newVersionFile && (
+            <p className="selected-file-row">
+              Selected file: {newVersionFile.name}
+              <button className="remove-file-button" onClick={handleRemoveNewVersionFile}>
+                ✕ Remove
+              </button>
+            </p>
+          )}
         </div>
       )}
 
