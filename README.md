@@ -1,10 +1,8 @@
 # DataDNA
 
-**AI Training-Data Supply Chain Security, Provenance & Model Impact Intelligence**
 
 DataDNA gives every AI training dataset a verifiable digital identity — a cryptographic "DNA" — and tracks it through its entire lifecycle: from raw upload, through every transformation and version, into the models it trains, with tamper-evident proof recorded on a permissioned blockchain.
 
-Built for a college hackathon (Smart India Hackathon prep) as a solo project.
 
 ---
 
