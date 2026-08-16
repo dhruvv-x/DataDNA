@@ -30,6 +30,25 @@ function App() {
   const [datasetHistory, setDatasetHistory] = useState<DatasetSummary[]>([])
   const [historyError, setHistoryError] = useState('')
 
+  // What-If Simulator — non-destructive preview of impact analysis for any
+  // version in the lineage, without loading it or changing its integrity
+  // status. Separate state from the main Inspector so it never clobbers
+  // the currently-loaded version's trust score/impact.
+  const [whatIfResult, setWhatIfResult] = useState<any>(null)
+  const [whatIfVersionNumber, setWhatIfVersionNumber] = useState<number | null>(null)
+  const [whatIfLoading, setWhatIfLoading] = useState(false)
+
+  // Dataset Passport — consolidates data that may already be in state
+  // (trust score, lineage, impact, blockchain verify) into a single
+  // printable summary card. No new backend endpoint required.
+  const [showPassport, setShowPassport] = useState(false)
+  const [passportLoading, setPassportLoading] = useState(false)
+
+  // Merkle root display — click to expand the full hash, separate button
+  // to copy it. copiedHash briefly shows "Copied" feedback then reverts.
+  const [merkleExpanded, setMerkleExpanded] = useState(false)
+  const [copiedHash, setCopiedHash] = useState(false)
+
   // Theme — persisted to localStorage, applied via a data-theme attribute on
   // <html> so every color in App.css (which reads CSS variables only) flips
   // in one shot. Defaults to dark if nothing's saved yet.
@@ -70,6 +89,11 @@ function App() {
     setLineage(null)
     setFabricResult(null)
     setVerifyResult(null)
+    setWhatIfResult(null)
+    setWhatIfVersionNumber(null)
+    setShowPassport(false)
+    setMerkleExpanded(false)
+    setCopiedHash(false)
   }
 
   // Turns a failed-response JSON body into a short, readable line instead of
@@ -401,6 +425,77 @@ function App() {
     } catch (error) {
       setStatus('Error: could not reach backend.')
     }
+  }
+
+  // Non-destructive preview: calls the same /impact endpoint as "Analyze
+  // Impact", but for any version in the lineage without loading it into
+  // the main Inspector or changing anything in the database.
+  async function handleWhatIf(targetVersionId: string, versionNumber: number) {
+    setWhatIfLoading(true)
+    setWhatIfResult(null)
+    setWhatIfVersionNumber(versionNumber)
+
+    try {
+      const response = await fetch(
+        `http://localhost:8000/datasets/versions/${targetVersionId}/impact`
+      )
+      const data = await response.json()
+
+      if (!response.ok) {
+        setStatus('Simulation failed: ' + describeError(data, 'please try again.'))
+        setWhatIfLoading(false)
+        return
+      }
+
+      setWhatIfResult(data)
+      setWhatIfLoading(false)
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+      setWhatIfLoading(false)
+    }
+  }
+
+  // Passport pulls together data that may already be loaded (trust score,
+  // lineage, impact, blockchain verify) — fetches whichever pieces are
+  // missing, then just displays what's already in state. No new backend
+  // endpoint needed.
+  async function handleCopyHash(hash: string) {
+    try {
+      await navigator.clipboard.writeText(hash)
+      setCopiedHash(true)
+      setTimeout(() => setCopiedHash(false), 1500)
+    } catch (error) {
+      setStatus('Could not copy — your browser may be blocking clipboard access.')
+    }
+  }
+
+  async function handleGeneratePassport() {
+    if (!versionId || !datasetId) {
+      setStatus('Load a dataset version first.')
+      return
+    }
+
+    setPassportLoading(true)
+
+    if (!lineage) {
+      await handleViewLineage()
+    }
+    if (!impact) {
+      try {
+        const impactResponse = await fetch(
+          `http://localhost:8000/datasets/versions/${versionId}/impact`
+        )
+        const impactData = await impactResponse.json()
+        if (impactResponse.ok) {
+          setImpact(impactData)
+        }
+      } catch (error) {
+        // Non-fatal — passport will just show impact as unavailable.
+      }
+    }
+
+    setPassportLoading(false)
+    setShowPassport(true)
   }
 
   async function handleRegisterOnChain() {
@@ -744,16 +839,66 @@ function App() {
                       {formatDate(v.created_at)}
                       {v.version_id === versionId && ' (currently loaded)'}
                     </span>
-                    <button
-                      className="primary"
-                      disabled={v.version_id === versionId}
-                      onClick={() => loadVersion(datasetId, v.version_id)}
-                    >
-                      {v.version_id === versionId ? 'Loaded' : 'Load'}
-                    </button>
+                    <span className="lineage-item-actions">
+                      <button
+                        className="primary"
+                        disabled={v.version_id === versionId}
+                        onClick={() => loadVersion(datasetId, v.version_id)}
+                      >
+                        {v.version_id === versionId ? 'Loaded' : 'Load'}
+                      </button>
+                      <button onClick={() => handleWhatIf(v.version_id, v.version_number)}>
+                        What If?
+                      </button>
+                    </span>
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {(whatIfLoading || whatIfResult) && (
+            <div className="section">
+              <h2>What-If Simulation</h2>
+              <p className="whatif-tag">
+                SIMULATION ONLY — no data was changed, Version {whatIfVersionNumber} was not marked invalid.
+              </p>
+
+              {whatIfLoading && <p>Simulating impact...</p>}
+
+              {whatIfResult && !whatIfLoading && (
+                <>
+                  <p>If Version {whatIfVersionNumber} became invalid:</p>
+                  <div className="impact-badge-row">
+                    <div className="impact-badge-block">
+                      <span className="impact-badge-label">Severity</span>
+                      <span className={severityClass(whatIfResult.severity)}>{whatIfResult.severity}</span>
+                    </div>
+                    <div className="impact-badge-block">
+                      <span className="impact-badge-label">Confidence</span>
+                      <span className={severityClass(whatIfResult.confidence)}>{whatIfResult.confidence}</span>
+                    </div>
+                  </div>
+                  <div className={'impact-recommendation impact-recommendation-' + (whatIfResult.severity || '').toLowerCase()}>
+                    <span className="impact-recommendation-label">Recommended Action</span>
+                    <span className="impact-recommendation-value">{whatIfResult.recommendation}</span>
+                  </div>
+                  <div className="impact-stats-row">
+                    <div className="impact-stat-chip">
+                      <span className="impact-stat-value">{whatIfResult.affected_model_ids?.length ?? 0}</span>
+                      <span className="impact-stat-label">Models</span>
+                    </div>
+                    <div className="impact-stat-chip">
+                      <span className="impact-stat-value">{whatIfResult.affected_training_runs?.length ?? 0}</span>
+                      <span className="impact-stat-label">Training Runs</span>
+                    </div>
+                    <div className="impact-stat-chip">
+                      <span className="impact-stat-value">{whatIfResult.affected_child_versions?.length ?? 0}</span>
+                      <span className="impact-stat-label">Child Versions</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -800,6 +945,33 @@ function App() {
                 </div>
               </div>
 
+              {trustScore.dataset_fingerprint && (
+                <div className="merkle-row">
+                  <div className="merkle-row-top">
+                    <span className="merkle-label" title="Merkle root of all record fingerprints in this version. Changing even one record changes this hash.">
+                      Merkle Root
+                    </span>
+                    <button
+                      type="button"
+                      className="merkle-copy-button"
+                      onClick={() => handleCopyHash(trustScore.dataset_fingerprint)}
+                    >
+                      {copiedHash ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="merkle-value"
+                    onClick={() => setMerkleExpanded(!merkleExpanded)}
+                    title="Click to expand full hash"
+                  >
+                    {merkleExpanded
+                      ? trustScore.dataset_fingerprint
+                      : `${trustScore.dataset_fingerprint.slice(0, 16)}…${trustScore.dataset_fingerprint.slice(-8)}`}
+                  </button>
+                </div>
+              )}
+
               {trustComponents.map(([label, comp]: any) => (
                 <div className="score-row" key={label}>
                   <div className="score-row-label">
@@ -816,6 +988,9 @@ function App() {
               <button onClick={handleAnalyzeImpact}>Analyze Impact (as-is)</button>
               <button className="danger" onClick={handleMarkInvalidAndAnalyze}>
                 Mark as Invalid &amp; Analyze Impact
+              </button>
+              <button onClick={handleGeneratePassport}>
+                {passportLoading ? 'Generating...' : 'Generate Dataset Passport'}
               </button>
             </div>
           )}
@@ -867,6 +1042,55 @@ function App() {
                   <span className="impact-stat-label">Child Versions</span>
                 </div>
               </div>
+            </div>
+          )}
+
+          {showPassport && trustScore && (
+            <div className="section passport-section">
+              <div className="passport-header">
+                <h2>Dataset Passport</h2>
+                <button className="link-button" onClick={() => window.print()}>
+                  Print / Export
+                </button>
+              </div>
+
+              <div className="passport-row">
+                <span className="passport-label">Version</span>
+                <span className="passport-value">
+                  {lineage?.versions?.find((v: any) => v.version_id === versionId)?.version_number ?? '—'}
+                </span>
+              </div>
+              <div className="passport-row">
+                <span className="passport-label">Trust Score</span>
+                <span className="passport-value">{trustScore.overall_score} / 100 — {trustVerdictLabel(trustScore.overall_score)}</span>
+              </div>
+              <div className="passport-row">
+                <span className="passport-label">Integrity Status</span>
+                <span className="passport-value">
+                  {trustScore.breakdown.integrity.score >= 70 ? 'VERIFIED' : 'NEEDS REVIEW'}
+                </span>
+              </div>
+              <div className="passport-row">
+                <span className="passport-label">Transformations (versions in lineage)</span>
+                <span className="passport-value">{lineage?.versions?.length ?? '—'}</span>
+              </div>
+              <div className="passport-row">
+                <span className="passport-label">Dependent Training Runs</span>
+                <span className="passport-value">{impact?.affected_training_runs?.length ?? '—'}</span>
+              </div>
+              <div className="passport-row">
+                <span className="passport-label">Dependent Models</span>
+                <span className="passport-value">{impact?.affected_model_ids?.length ?? '—'}</span>
+              </div>
+              <div className="passport-row">
+                <span className="passport-label">Blockchain Registration</span>
+                <span className="passport-value">
+                  {verifyResult
+                    ? (verifyResult.verified === true || verifyResult.verified === 'true' ? 'VERIFIED ON-CHAIN' : 'MISMATCH')
+                    : (fabricResult ? 'REGISTERED (not yet verified)' : 'NOT REGISTERED')}
+                </span>
+              </div>
+              <p className="passport-footer">Generated {new Date().toLocaleString()} — DataDNA</p>
             </div>
           )}
 

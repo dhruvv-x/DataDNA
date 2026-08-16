@@ -61,7 +61,7 @@ def compute_trust_score(version_id: str) -> dict:
     """
     conn = get_connection()
     row = conn.execute(
-        """SELECT version_id, version_number, record_count, integrity_status
+        """SELECT version_id, version_number, record_count, integrity_status, dataset_fingerprint
            FROM dataset_versions WHERE version_id = ?""",
         (version_id,),
     ).fetchone()
@@ -88,6 +88,7 @@ def compute_trust_score(version_id: str) -> dict:
 
     return {
         "version_id": version_id,
+        "dataset_fingerprint": row["dataset_fingerprint"],
         "overall_score": round(overall, 1),
         "breakdown": {
             "integrity": {

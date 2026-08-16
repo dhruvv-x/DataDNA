@@ -1218,3 +1218,175 @@ pre {
     padding: 10px 4px;
   }
 }
+/* WHAT-IF SIMULATOR */
+.lineage-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.whatif-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  background-color: var(--color-accent-glow);
+  border: 1px solid var(--color-warning-border);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+/* DATASET PASSPORT */
+.passport-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.passport-header h2 {
+  margin-bottom: 0;
+  border-left: none;
+  padding-left: 0;
+}
+
+.passport-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.passport-row:last-of-type {
+  border-bottom: none;
+}
+
+.passport-label {
+  color: var(--color-ink-faint);
+}
+
+.passport-value {
+  color: var(--color-ink);
+  font-weight: 700;
+}
+
+.passport-footer {
+  margin-top: 14px;
+  font-size: 0.7rem;
+  color: var(--color-ink-faint);
+  text-align: right;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .passport-section,
+  .passport-section * {
+    visibility: visible;
+  }
+  .passport-section {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    box-shadow: none;
+    border: none;
+  }
+  .passport-header button {
+    display: none;
+  }
+}
+/* MERKLE ROOT DISPLAY */
+.merkle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  margin-bottom: 18px;
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.merkle-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+  cursor: help;
+}
+
+.merkle-value {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+/* MERKLE ROOT DISPLAY */
+.merkle-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-bottom: 18px;
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.merkle-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.merkle-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+  cursor: help;
+}
+
+.merkle-copy-button {
+  background: none;
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-ink-soft);
+  padding: 2px 10px;
+  font-size: 0.66rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  border-radius: var(--radius-tag);
+  cursor: pointer;
+  margin: 0;
+}
+
+.merkle-copy-button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: none;
+}
+
+.merkle-value {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  word-break: break-all;
+  line-height: 1.4;
+}
