@@ -65,8 +65,33 @@ def _detect_outliers(df: pd.DataFrame) -> dict:
     return outliers
 
 
+def _is_numeric_like(val) -> bool:
+    """True if val is a number, or a string that parses cleanly as one."""
+    if isinstance(val, bool):
+        return False
+    if isinstance(val, (int, float)):
+        return True
+    if isinstance(val, str):
+        try:
+            float(val)
+            return True
+        except ValueError:
+            return False
+    return False
+
+
 def _detect_schema_issues(records: list) -> dict:
-    """Flag columns where value types are inconsistent across records."""
+    """
+    Flag columns where value types are inconsistent across records.
+
+    Two cases are covered:
+    1. Genuine mixed Python types (e.g. int vs str) — the original check.
+    2. CSV-sourced columns, where every value arrives as a string, but a
+       column is "mostly numeric" (e.g. heart_rate_bpm) except for a stray
+       non-numeric entry (e.g. "seventy-eight"). Without this, a text value
+       hiding in a numeric CSV column would never be flagged, since
+       csv.DictReader makes every value type(str) regardless of content.
+    """
     if not records:
         return {}
 
@@ -75,14 +100,30 @@ def _detect_schema_issues(records: list) -> dict:
 
     for col in columns:
         types_seen = set()
+        numeric_like_count = 0
+        non_numeric_like_count = 0
+        non_numeric_example = None
+
         for r in records:
             val = r.get(col)
             if val is None or val == "":
                 continue
             types_seen.add(type(val).__name__)
 
+            if _is_numeric_like(val):
+                numeric_like_count += 1
+            else:
+                non_numeric_like_count += 1
+                if non_numeric_example is None:
+                    non_numeric_example = val
+
         if len(types_seen) > 1:
             issues[col] = f"mixed types: {', '.join(sorted(types_seen))}"
+        elif numeric_like_count > 0 and non_numeric_like_count > 0:
+            issues[col] = (
+                f"mixed types: numeric and non-numeric "
+                f"(e.g. '{non_numeric_example}')"
+            )
 
     return issues
 
