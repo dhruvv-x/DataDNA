@@ -130,3 +130,20 @@ def get_training_runs_for_dataset_version(dataset_version_id: str) -> list:
         }
         for r in rows
     ]
+def list_models() -> list:
+    """Return all registered models, most recently created first."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT model_id, name, version, created_at FROM models ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+
+    return [
+        {
+            "model_id": r["model_id"],
+            "name": r["name"],
+            "version": r["version"],
+            "created_at": r["created_at"],
+        }
+        for r in rows
+    ]

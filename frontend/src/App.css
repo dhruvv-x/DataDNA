@@ -184,9 +184,8 @@ body {
   box-shadow: 0 0 12px var(--color-primary-glow);
 }
 
-/* Logo now sits inside a bordered rounded-square chip instead of floating
-   free against the header — reads as a mark/badge rather than a loose
-   icon. */
+/* Logo sits inside a bordered rounded-square chip instead of floating free
+   against the header — reads as a mark/badge rather than a loose icon. */
 .app-logo-frame {
   flex-shrink: 0;
   width: 64px;
@@ -400,6 +399,64 @@ input[type="file"] {
   margin-right: 8px;
 }
 
+select {
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-ink);
+  padding: 10px 13px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  margin-right: 8px;
+  margin-top: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-glow);
+}
+
+/* Groups a small registration form's inputs/select/button on one row,
+   wrapping on narrow layouts instead of overflowing the card. */
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 4px;
+}
+
+.hint-text {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-ink-faint);
+  margin: 4px 0 0;
+}
+
+/* Registered models shown as a row of stamped chips — same visual language
+   as status badges, since a model registration is itself a provenance
+   record worth reading at a glance. */
+.model-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 18px;
+}
+
+.model-chip {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-tag);
+  padding: 4px 10px;
+}
+
 button {
   background-color: var(--color-surface-raised);
   color: var(--color-ink);
@@ -611,7 +668,7 @@ pre {
   font-family: var(--font-mono);
 }
 
-/* HISTORY LIST — a ledger; index tag reflects real upload order */
+/* HISTORY LIST — a ledger; index tag reflects real upload order. */
 .history-list {
   display: flex;
   flex-direction: column;
@@ -630,7 +687,7 @@ pre {
   border-left: 2px solid transparent;
   border-radius: var(--radius-sm);
   padding: 13px 16px;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
 }
 
 .history-row::before {
@@ -652,6 +709,10 @@ pre {
   border-color: var(--color-primary);
   border-left-color: var(--color-primary);
   background-color: var(--color-surface-raised);
+}
+
+.history-row:hover:not(.history-row-broken) {
+  transform: translateX(2px);
 }
 
 .history-row-active {
@@ -698,6 +759,7 @@ pre {
   border-left-color: transparent;
   background-color: var(--color-surface-alt);
 }
+
 /* Flagged-invalid rows get their own accent so the eye catches trouble
    rows even before reading the badge text. */
 .history-row-flagged {
@@ -713,13 +775,6 @@ pre {
   box-shadow: 0 0 0 1px var(--color-danger) inset;
 }
 
-.history-row {
-  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
-}
-
-.history-row:hover:not(.history-row-broken) {
-  transform: translateX(2px);
-}
 /* STATUS BADGES — stamped tag, not a soft pill */
 .status-badge {
   display: inline-flex;
@@ -820,6 +875,12 @@ pre {
   font-size: 0.83rem;
   font-family: var(--font-mono);
   color: var(--color-ink-soft);
+}
+
+.lineage-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 /* TRUST SCORE — signature gauge */
@@ -955,6 +1016,68 @@ pre {
   background: var(--color-danger);
 }
 
+/* MERKLE ROOT DISPLAY */
+.merkle-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-bottom: 18px;
+  background-color: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.merkle-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.merkle-label {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+  cursor: help;
+}
+
+.merkle-copy-button {
+  background: none;
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-ink-soft);
+  padding: 2px 10px;
+  font-size: 0.66rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  border-radius: var(--radius-tag);
+  cursor: pointer;
+  margin: 0;
+}
+
+.merkle-copy-button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  box-shadow: none;
+}
+
+.merkle-value {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  cursor: pointer;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
 /* BLOCKCHAIN RESULT */
 .blockchain-result {
   margin-top: 14px;
@@ -1032,83 +1155,6 @@ pre {
   box-shadow: none;
 }
 
-/* ACCESSIBILITY */
-@media (prefers-reduced-motion: reduce) {
-  button,
-  .history-row,
-  .score-bar-fill,
-  .trust-gauge,
-  .section,
-  .logo-pulse-node,
-  body {
-    transition: none !important;
-    animation: none !important;
-  }
-}
-
-/* RESPONSIVE */
-@media (max-width: 1080px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-  }
-  .side-col {
-    position: static;
-  }
-}
-
-@media (max-width: 640px) {
-  #root {
-    padding: 16px 14px 48px;
-  }
-  .topbar {
-    flex-direction: column;
-    text-align: center;
-    padding: 20px;
-  }
-  .topbar-text {
-    text-align: center;
-  }
-  h1,
-  .subtitle {
-    text-align: center;
-  }
-  .theme-toggle {
-    margin-top: 4px;
-  }
-  .stats-bar {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .stat-card:nth-child(odd) {
-    border-right: 1px solid var(--color-border);
-  }
-  .stat-card:nth-child(even) {
-    border-right: none;
-  }
-  h1 {
-    font-size: 1.6rem;
-  }
-  .section {
-    padding: 18px 16px;
-  }
-  .history-row,
-  .lineage-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  .history-row::before {
-    margin-right: 0;
-    margin-bottom: 4px;
-  }
-  .history-row-side {
-    width: 100%;
-    justify-content: space-between;
-  }
-  .trust-gauge-row {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
 /* IMPACT ANALYSIS — badge pair, recommendation banner, stat chips */
 .impact-badge-row {
   display: flex;
@@ -1209,22 +1255,7 @@ pre {
   text-align: center;
 }
 
-@media (max-width: 640px) {
-  .impact-stats-row {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-  }
-  .impact-stat-chip {
-    padding: 10px 4px;
-  }
-}
 /* WHAT-IF SIMULATOR */
-.lineage-item-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
 .whatif-tag {
   font-family: var(--font-mono);
   font-size: 0.7rem;
@@ -1238,6 +1269,7 @@ pre {
   border-radius: var(--radius-sm);
   margin-bottom: 16px;
 }
+
 /* DATASET PASSPORT */
 .passport-header {
   display: flex;
@@ -1301,92 +1333,98 @@ pre {
     display: none;
   }
 }
-/* MERKLE ROOT DISPLAY */
-.merkle-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
-  margin-bottom: 18px;
-  background-color: var(--color-surface-alt);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+
+/* ACCESSIBILITY */
+@media (prefers-reduced-motion: reduce) {
+  button,
+  .history-row,
+  .score-bar-fill,
+  .trust-gauge,
+  .section,
+  .logo-pulse-node,
+  body {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
-.merkle-label {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--color-ink-faint);
-  cursor: help;
+/* RESPONSIVE */
+@media (max-width: 1080px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .side-col {
+    position: static;
+  }
 }
 
-.merkle-value {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--color-primary);
-  font-weight: 600;
-}
-/* MERKLE ROOT DISPLAY */
-.merkle-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  margin-bottom: 18px;
-  background-color: var(--color-surface-alt);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-}
-
-.merkle-row-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.merkle-label {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--color-ink-faint);
-  cursor: help;
-}
-
-.merkle-copy-button {
-  background: none;
-  border: 1px solid var(--color-border-strong);
-  color: var(--color-ink-soft);
-  padding: 2px 10px;
-  font-size: 0.66rem;
-  font-family: var(--font-mono);
-  font-weight: 600;
-  border-radius: var(--radius-tag);
-  cursor: pointer;
-  margin: 0;
-}
-
-.merkle-copy-button:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  box-shadow: none;
-}
-
-.merkle-value {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--color-primary);
-  font-weight: 600;
-  background: none;
-  border: none;
-  padding: 0;
-  margin: 0;
-  text-align: left;
-  cursor: pointer;
-  word-break: break-all;
-  line-height: 1.4;
+@media (max-width: 640px) {
+  #root {
+    padding: 16px 14px 48px;
+  }
+  .topbar {
+    flex-direction: column;
+    text-align: center;
+    padding: 20px;
+  }
+  .topbar-text {
+    text-align: center;
+  }
+  h1,
+  .subtitle {
+    text-align: center;
+  }
+  .theme-toggle {
+    margin-top: 4px;
+  }
+  .stats-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .stat-card:nth-child(odd) {
+    border-right: 1px solid var(--color-border);
+  }
+  .stat-card:nth-child(even) {
+    border-right: none;
+  }
+  h1 {
+    font-size: 1.6rem;
+  }
+  .section {
+    padding: 18px 16px;
+  }
+  .history-row,
+  .lineage-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .history-row::before {
+    margin-right: 0;
+    margin-bottom: 4px;
+  }
+  .history-row-side {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .trust-gauge-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .impact-stats-row {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .impact-stat-chip {
+    padding: 10px 4px;
+  }
+  .form-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .form-row input,
+  .form-row select,
+  .form-row button {
+    margin-right: 0;
+    width: 100%;
+  }
 }

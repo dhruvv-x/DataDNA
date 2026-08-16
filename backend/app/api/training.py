@@ -10,6 +10,7 @@ from app.core.training import (
     register_training_run,
     get_training_runs_for_model,
     get_training_runs_for_dataset_version,
+    list_models,
 )
 
 router = APIRouter(tags=["training"])
@@ -25,6 +26,11 @@ class TrainingRunCreate(BaseModel):
     model_id: str
     hyperparameters: dict = {}
     actor: str = None
+
+
+@router.get("/models")
+def get_all_models():
+    return {"models": list_models()}
 
 
 @router.post("/models")

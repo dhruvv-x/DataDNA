@@ -2,3 +2,5 @@ venv/
 __pycache__/
 *.pyc
 backend/datadna.db
+backend/*.db
+backend/datadna_backup_*.db

@@ -49,6 +49,14 @@ function App() {
   const [merkleExpanded, setMerkleExpanded] = useState(false)
   const [copiedHash, setCopiedHash] = useState(false)
 
+  // Training Runs & Models — registers provenance links between a dataset
+  // version and a model, which is what the Impact Engine actually queries.
+  const [models, setModels] = useState<any[]>([])
+  const [newModelName, setNewModelName] = useState('')
+  const [newModelVersion, setNewModelVersion] = useState('')
+  const [selectedModelId, setSelectedModelId] = useState('')
+  const [trainingRunActor, setTrainingRunActor] = useState('')
+
   // Theme — persisted to localStorage, applied via a data-theme attribute on
   // <html> so every color in App.css (which reads CSS variables only) flips
   // in one shot. Defaults to dark if nothing's saved yet.
@@ -70,6 +78,7 @@ function App() {
 
   useEffect(() => {
     fetchDatasetHistory()
+    fetchModels()
   }, [])
 
   async function fetchDatasetHistory() {
@@ -80,6 +89,16 @@ function App() {
       setHistoryError('')
     } catch (error) {
       setHistoryError('Could not load dataset history. Is the backend running?')
+    }
+  }
+
+  async function fetchModels() {
+    try {
+      const response = await fetch('http://localhost:8000/models')
+      const data = await response.json()
+      setModels(data.models || [])
+    } catch (error) {
+      // Non-fatal — the registration forms below just won't have options yet.
     }
   }
 
@@ -94,6 +113,74 @@ function App() {
     setShowPassport(false)
     setMerkleExpanded(false)
     setCopiedHash(false)
+  }
+
+  async function handleCreateModel() {
+    if (!newModelName || !newModelVersion) {
+      setStatus('Enter both a model name and version first.')
+      return
+    }
+
+    setStatus('Registering model...')
+
+    try {
+      const response = await fetch('http://localhost:8000/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newModelName, version: newModelVersion }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        setStatus('Could not register model: ' + describeError(data, 'please try again.'))
+        return
+      }
+
+      setStatus('')
+      setNewModelName('')
+      setNewModelVersion('')
+      setSelectedModelId(data.model_id)
+      fetchModels()
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+
+  async function handleCreateTrainingRun() {
+    if (!versionId) {
+      setStatus('Load a dataset version first.')
+      return
+    }
+    if (!selectedModelId) {
+      setStatus('Register or select a model first.')
+      return
+    }
+
+    setStatus('Registering training run...')
+
+    try {
+      const response = await fetch('http://localhost:8000/training-runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataset_version_id: versionId,
+          model_id: selectedModelId,
+          hyperparameters: {},
+          actor: trainingRunActor || undefined,
+        }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        setStatus('Could not register training run: ' + describeError(data, 'please try again.'))
+        return
+      }
+
+      setStatus('Training run registered — re-run Impact Analysis to see it reflected.')
+      setTrainingRunActor('')
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
   }
 
   // Turns a failed-response JSON body into a short, readable line instead of
@@ -826,6 +913,66 @@ function App() {
               )}
             </div>
           )}
+
+          <div className="section">
+            <h2>Training Runs &amp; Models</h2>
+            <p>Register a model, then link it to the currently loaded dataset version as a training run.</p>
+
+            <div className="form-row">
+              <input
+                type="text"
+                placeholder="Model name"
+                value={newModelName}
+                onChange={(e) => setNewModelName(e.target.value)}
+              />
+              <input
+                type="text"
+                placeholder="Model version (e.g. v1)"
+                value={newModelVersion}
+                onChange={(e) => setNewModelVersion(e.target.value)}
+              />
+              <button className="primary" onClick={handleCreateModel}>
+                Register Model
+              </button>
+            </div>
+
+            {models.length > 0 && (
+              <div className="model-list">
+                {models.map((m) => (
+                  <span key={m.model_id} className="model-chip">
+                    {m.name} · {m.version}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {versionId ? (
+              <div className="form-row">
+                <select
+                  value={selectedModelId}
+                  onChange={(e) => setSelectedModelId(e.target.value)}
+                >
+                  <option value="">Select a model...</option>
+                  {models.map((m) => (
+                    <option key={m.model_id} value={m.model_id}>
+                      {m.name} · {m.version}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Actor (optional)"
+                  value={trainingRunActor}
+                  onChange={(e) => setTrainingRunActor(e.target.value)}
+                />
+                <button className="primary" onClick={handleCreateTrainingRun}>
+                  Register Training Run
+                </button>
+              </div>
+            ) : (
+              <p className="hint-text">Load a dataset version above to register a training run against it.</p>
+            )}
+          </div>
 
           {lineage && (
             <div className="section">
