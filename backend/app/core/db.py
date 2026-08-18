@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS dataset_versions (
     record_count INTEGER NOT NULL,
     created_at TEXT NOT NULL,
     integrity_status TEXT NOT NULL DEFAULT 'PENDING',
+    onchain_status TEXT NOT NULL DEFAULT 'NOT_REGISTERED',
     FOREIGN KEY (dataset_id) REFERENCES datasets (dataset_id),
     FOREIGN KEY (parent_version_id) REFERENCES dataset_versions (version_id)
 );

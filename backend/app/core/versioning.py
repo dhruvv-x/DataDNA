@@ -129,7 +129,7 @@ def get_lineage(dataset_id: str) -> list:
     conn = get_connection()
     rows = conn.execute(
         """SELECT version_id, parent_version_id, version_number,
-                  dataset_fingerprint, record_count, created_at, integrity_status
+                  dataset_fingerprint, record_count, created_at, integrity_status, onchain_status
            FROM dataset_versions
            WHERE dataset_id = ?
            ORDER BY version_number ASC""",
@@ -167,7 +167,7 @@ def get_version(version_id: str) -> dict:
     conn = get_connection()
     row = conn.execute(
         """SELECT version_id, dataset_id, parent_version_id, version_number,
-                  dataset_fingerprint, record_count, created_at, integrity_status
+                  dataset_fingerprint, record_count, created_at, integrity_status, onchain_status
            FROM dataset_versions WHERE version_id = ?""",
         (version_id,),
     ).fetchone()
@@ -175,3 +175,17 @@ def get_version(version_id: str) -> dict:
     if row is None:
         raise ValueError("version_id not found")
     return dict(row)
+
+def mark_registered_onchain(version_id: str) -> None:
+    """
+    Mark a dataset version as successfully registered on the Fabric ledger.
+    Called after a successful chaincode invoke, so the backend stays in sync
+    with on-chain state and doesn't attempt duplicate (rejected) registrations.
+    """
+    conn = get_connection()
+    conn.execute(
+        "UPDATE dataset_versions SET onchain_status = 'REGISTERED' WHERE version_id = ?",
+        (version_id,),
+    )
+    conn.commit()
+    conn.close()

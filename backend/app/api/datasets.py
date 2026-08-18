@@ -5,7 +5,7 @@ Dataset upload API endpoints.
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
 from app.core.parsing import parse_upload, ParseError
-from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version, get_version, list_all_datasets
+from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version, get_version, list_all_datasets, mark_registered_onchain
 from app.core.impact import analyze_impact
 from app.core.fabric_client import invoke, query, FabricError
 from app.core.audit import run_audit, get_audit
@@ -156,11 +156,23 @@ async def register_onchain(version_id: str):
     Manually register this dataset version's provenance on the Fabric ledger.
     HACKATHON SIMPLIFICATION: explicit trigger, not automatic on upload —
     keeps blockchain registration deliberate and demo-controllable.
+
+    Idempotent: if this version is already marked REGISTERED in the local DB,
+    skips the Fabric call entirely and returns the existing status, instead of
+    hitting chaincode's immutability rejection (which surfaces as a 502).
     """
     try:
         version = get_version(version_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+    if version["onchain_status"] == "REGISTERED":
+        return {
+            "version_id": version_id,
+            "status": "already_registered",
+            "fabric_output": None,
+        }
+
     try:
         result = invoke(
             "RegisterDatasetVersion",
@@ -174,8 +186,16 @@ async def register_onchain(version_id: str):
                 version["created_at"],
             ],
         )
+        mark_registered_onchain(version_id)
         return {"version_id": version_id, "status": "registered", "fabric_output": result}
     except FabricError as e:
+        if "already registered on-chain" in str(e):
+            mark_registered_onchain(version_id)
+            return {
+                "version_id": version_id,
+                "status": "already_registered",
+                "fabric_output": None,
+            }
         raise HTTPException(status_code=502, detail=str(e))
 
 
