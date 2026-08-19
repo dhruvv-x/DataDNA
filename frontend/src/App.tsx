@@ -207,6 +207,14 @@ function App() {
     return parent ? `Version ${parent.version_number}` : 'an earlier version'
   }
 
+  // Reads the real on-chain registration status from the lineage data
+  // (which comes straight from the database), instead of relying on
+  // session-only fabricResult/verifyResult state that resets on refresh.
+  function getOnchainStatus(): string | null {
+    const current = lineage?.versions?.find((v: any) => v.version_id === versionId)
+    return current?.onchain_status ?? null
+  }
+
   // Fabric CLI output comes back with raw ANSI color escape codes
   // (e.g. "\u001b[34m...\u001b[0m") which render as ugly literal characters
   // in HTML. This strips them so the log line is readable in the UI.
@@ -1234,7 +1242,7 @@ function App() {
                 <span className="passport-value">
                   {verifyResult
                     ? (verifyResult.verified === true || verifyResult.verified === 'true' ? 'VERIFIED ON-CHAIN' : 'MISMATCH')
-                    : (fabricResult ? 'REGISTERED (not yet verified)' : 'NOT REGISTERED')}
+                    : (getOnchainStatus() === 'REGISTERED' ? 'REGISTERED (verify to confirm on-chain)' : 'NOT REGISTERED')}
                 </span>
               </div>
               <p className="passport-footer">Generated {new Date().toLocaleString()} — DataDNA</p>
