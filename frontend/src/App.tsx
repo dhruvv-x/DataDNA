@@ -83,7 +83,7 @@ function App() {
 
   async function fetchDatasetHistory() {
     try {
-      const response = await fetch('http://localhost:8000/datasets')
+      const response = await fetch('http://172.20.34.59:8000/datasets')
       const data = await response.json()
       setDatasetHistory(data.datasets || [])
       setHistoryError('')
@@ -94,7 +94,7 @@ function App() {
 
   async function fetchModels() {
     try {
-      const response = await fetch('http://localhost:8000/models')
+      const response = await fetch('http://172.20.34.59:8000/models')
       const data = await response.json()
       setModels(data.models || [])
     } catch (error) {
@@ -105,7 +105,6 @@ function App() {
   function resetAllResults() {
     setTrustScore(null)
     setImpact(null)
-    setLineage(null)
     setFabricResult(null)
     setVerifyResult(null)
     setWhatIfResult(null)
@@ -124,7 +123,7 @@ function App() {
     setStatus('Registering model...')
 
     try {
-      const response = await fetch('http://localhost:8000/models', {
+      const response = await fetch('http://172.20.34.59:8000/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newModelName, version: newModelVersion }),
@@ -159,7 +158,7 @@ function App() {
     setStatus('Registering training run...')
 
     try {
-      const response = await fetch('http://localhost:8000/training-runs', {
+      const response = await fetch('http://172.20.34.59:8000/training-runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -302,7 +301,7 @@ function App() {
     formData.append('name', datasetName)
 
     try {
-      const uploadResponse = await fetch('http://localhost:8000/datasets', {
+      const uploadResponse = await fetch('http://172.20.34.59:8000/datasets', {
         method: 'POST',
         body: formData,
       })
@@ -318,7 +317,7 @@ function App() {
       setVersionId(uploadData.version_id)
 
       const trustResponse = await fetch(
-        `http://localhost:8000/datasets/versions/${uploadData.version_id}/trust`
+        `http://172.20.34.59:8000/datasets/versions/${uploadData.version_id}/trust`
       )
       const trustData = await trustResponse.json()
 
@@ -341,7 +340,7 @@ function App() {
 
     try {
       const trustResponse = await fetch(
-        `http://localhost:8000/datasets/versions/${targetVersionId}/trust`
+        `http://172.20.34.59:8000/datasets/versions/${targetVersionId}/trust`
       )
       const trustData = await trustResponse.json()
 
@@ -384,7 +383,7 @@ function App() {
 
     try {
       const impactResponse = await fetch(
-        `http://localhost:8000/datasets/versions/${versionId}/impact`
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/impact`
       )
       const impactData = await impactResponse.json()
 
@@ -422,7 +421,7 @@ function App() {
 
     try {
       const invalidateResponse = await fetch(
-        `http://localhost:8000/datasets/versions/${versionId}/invalidate`,
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/invalidate`,
         { method: 'POST' }
       )
       if (!invalidateResponse.ok) {
@@ -432,7 +431,7 @@ function App() {
       }
 
       const impactResponse = await fetch(
-        `http://localhost:8000/datasets/versions/${versionId}/impact`
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/impact`
       )
       const impactData = await impactResponse.json()
 
@@ -474,7 +473,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/datasets/${datasetId}/versions`,
+        `http://172.20.34.59:8000/datasets/${datasetId}/versions`,
         {
           method: 'POST',
           body: formData,
@@ -507,7 +506,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/datasets/${datasetId}/lineage`
+        `http://172.20.34.59:8000/datasets/${datasetId}/lineage`
       )
       const data = await response.json()
 
@@ -532,7 +531,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/datasets/versions/${targetVersionId}/impact`
+        `http://172.20.34.59:8000/datasets/versions/${targetVersionId}/impact`
       )
       const data = await response.json()
 
@@ -578,7 +577,7 @@ function App() {
     if (!impact) {
       try {
         const impactResponse = await fetch(
-          `http://localhost:8000/datasets/versions/${versionId}/impact`
+          `http://172.20.34.59:8000/datasets/versions/${versionId}/impact`
         )
         const impactData = await impactResponse.json()
         if (impactResponse.ok) {
@@ -605,7 +604,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/datasets/versions/${versionId}/register-onchain`,
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/register-onchain`,
         { method: 'POST' }
       )
       const data = await response.json()
@@ -633,7 +632,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/datasets/versions/${versionId}/verify-onchain`
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/verify-onchain`
       )
       const data = await response.json()
 
