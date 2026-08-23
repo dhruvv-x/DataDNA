@@ -616,6 +616,9 @@ function App() {
 
       setStatus('')
       setFabricResult(data)
+      if (datasetId) {
+        handleViewLineage()
+      }
     } catch (error) {
       setStatus('Error: could not reach backend.')
     }
