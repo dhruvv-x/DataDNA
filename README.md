@@ -68,6 +68,18 @@ A trust score that judges can't audit is not trustworthy. Every sub-score (Integ
 
 ---
 
+## Beyond AI datasets
+
+The pattern here — fingerprint a version, register it on-chain, tokenize ownership, stake collateral against its integrity — is not specific to AI training data. AI datasets are the proof-of-concept because provenance failures there are especially costly (a single poisoned dataset can silently corrupt every model trained on it), but the same primitives generalize to any setting where a party needs to prove *what data was used, who owned it, and who's financially accountable if it's wrong*:
+
+- **Healthcare records** — providers registering record versions on-chain, an NFT-style token proving custody as records move between hospitals or labs, stake-backed accountability for data integrity.
+- **Supply chain provenance** — each handoff of a batch (raw material → manufacturer → distributor) recorded as a version, ownership token transferred at each step, stake slashed if a batch is later found counterfeit or mislabeled.
+- **Land records** — a title registered as a version, ownership token transferred on sale, collateral staked by a registrar as a guarantee against fraudulent filings.
+
+The chaincode functions are deliberately generic rather than AI-specific: `RegisterDatasetVersion` works for any versioned asset, `MintDatasetToken`/`TransferToken` for any NFT-style ownership record, `StakeTokens`/`SlashStake` for any collateral-backed accountability mechanism. AI dataset provenance is the demo built on top of them, not a ceiling on what they can represent.
+
+---
+
 ## Tech stack
 
 | Layer | Technology |
@@ -107,7 +119,9 @@ backend/
 chaincode/
 └── datadna/                  Go chaincode: RegisterDatasetVersion,
                                RegisterTransformation, RegisterTrainingRun,
-                               VerifyIntegrity, GetDatasetVersionHistory
+                               VerifyIntegrity, GetDatasetVersionHistory,
+                               MintDatasetToken, TransferToken, GetTokenOwner,
+                               StakeTokens, SlashStake, GetStakeBalance
 
 frontend/
 └── src/
@@ -167,6 +181,12 @@ docker start peer0.org1.example.com peer0.org2.example.com orderer.example.com c
 | `GET` | `/datasets/versions/{id}/impact` | Downstream impact analysis |
 | `POST` | `/datasets/versions/{id}/register-onchain` | Register version fingerprint on Hyperledger Fabric |
 | `GET` | `/datasets/versions/{id}/verify-onchain` | Verify local fingerprint matches the blockchain record |
+| `POST` | `/datasets/versions/{id}/mint-token` | Mint an NFT-style ownership token for a dataset version |
+| `GET` | `/datasets/tokens/{id}/owner` | Get the current owner of a dataset version's token |
+| `POST` | `/datasets/tokens/{id}/transfer` | Transfer a dataset version's token to another org |
+| `POST` | `/datasets/versions/{id}/stake` | Stake tokens as collateral against a dataset version |
+| `GET` | `/datasets/versions/{id}/stake-balance` | Get an org's stake amount and slashed status for a version |
+| `POST` | `/datasets/versions/{id}/slash-stake` | Slash an org's stake (e.g. after invalidation) |
 | `POST` | `/models` | Register a model |
 | `GET` | `/models` | List all registered models |
 | `POST` | `/training-runs` | Link a dataset version to a model as a training run |
@@ -184,6 +204,15 @@ python -m pytest app/tests/ -v
 
 77 tests covering fingerprinting, canonicalization, versioning, upload parsing, AI auditing, trust score calculation, training/model registration, impact analysis, invalidation, and Fabric client integration — all passing.
 
+### Chaincode tests
+
+```bash
+cd chaincode/datadna
+go test ./... -v
+```
+
+27 unit tests covering dataset version registration, transformation/training-run lineage, integrity verification, dataset token mint/transfer/owner queries, and stake/slash/balance logic — all passing.
+
 ---
 
 ## Scope notes
@@ -193,7 +222,7 @@ Built and prioritized under a hard deadline. The following are intentionally out
 - Data poisoning detection beyond basic statistical outlier flagging
 - Distribution drift analysis across versions
 - Formal bias/fairness indicators
-- Federated / fully decentralized multi-organization deployment (the underlying Fabric network is genuinely 2-org; the UI demonstrates a single-org view)
+- Federated onboarding of additional organizations beyond the current 2-org network (Org1MSP and Org2MSP already interact directly — minting, transferring tokens, and staking/slashing across orgs is implemented and demonstrated live — but dynamically adding new orgs to the channel is not yet built)
 - Zero-knowledge proofs for privacy-preserving verification
 
 These are natural extensions once the core pipeline is validated, not fundamental limitations of the architecture.
