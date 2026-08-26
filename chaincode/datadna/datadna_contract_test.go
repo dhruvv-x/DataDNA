@@ -212,6 +212,53 @@ func TestGetDatasetVersionHistory_EmptyForUnknownDataset(t *testing.T) {
 	require.Len(t, versions, 0, "unknown dataset should return empty list, not an error")
 }
 
+func TestTransferDatasetOwnership_Success(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, _ := newMockContext()
+
+	// Org1 registers the dataset — Org1 becomes the initial owner (actor == owner).
+	err := contract.RegisterDatasetVersion(
+		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
+	)
+	require.NoError(t, err)
+
+	// Org1 (the real owner) transfers ownership to Org2.
+	err = contract.TransferDatasetOwnership(ctx, "cropdisease", "v1", "Org2MSP", "Org1MSP")
+	require.NoError(t, err, "transfer by the real current owner should succeed")
+
+	owner, err := contract.GetDatasetOwner(ctx, "cropdisease", "v1")
+	require.NoError(t, err)
+	require.Equal(t, "Org2MSP", owner, "owner should now be Org2MSP after transfer")
+}
+
+func TestTransferDatasetOwnership_RejectedIfNotOwner(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, _ := newMockContext()
+
+	// Org1 registers the dataset — Org1 becomes the initial owner.
+	err := contract.RegisterDatasetVersion(
+		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
+	)
+	require.NoError(t, err)
+
+	// Org2 (NOT the owner) tries to transfer it to itself — must be rejected.
+	err = contract.TransferDatasetOwnership(ctx, "cropdisease", "v1", "Org2MSP", "Org2MSP")
+	require.Error(t, err, "transfer attempted by a non-owner must be rejected")
+
+	// Ownership must remain unchanged (still Org1MSP).
+	owner, getErr := contract.GetDatasetOwner(ctx, "cropdisease", "v1")
+	require.NoError(t, getErr)
+	require.Equal(t, "Org1MSP", owner, "ownership must NOT change after a rejected transfer")
+}
+
+func TestGetDatasetOwner_NotFound(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, _ := newMockContext()
+
+	_, err := contract.GetDatasetOwner(ctx, "cropdisease", "v99")
+	require.Error(t, err, "looking up the owner of a non-existent version must return an error")
+}
+
 // newMockIterator builds a mocks.StateQueryIterator backed by a static snapshot
 // of matching keys/values from the given stub's ledger, filtered by composite-key prefix.
 func newMockIterator(stub *mocks.ChaincodeStub, objType string, attrs []string) *mocks.StateQueryIterator {

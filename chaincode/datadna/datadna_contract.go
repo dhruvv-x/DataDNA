@@ -12,7 +12,9 @@ type DataDNAContract struct {
 	contractapi.Contract
 }
 
-// DatasetVersion represents an immutable, on-chain record of one dataset version
+// DatasetVersion represents an immutable, on-chain record of one dataset version.
+// OwnerOrg is the org that currently owns/controls this version (NFT-style ownership) —
+// it starts as the registering actor and can change via TransferDatasetOwnership.
 type DatasetVersion struct {
 	DocType         string `json:"docType"` // "datasetVersion" - used to distinguish record types in the ledger
 	DatasetID       string `json:"datasetId"`
@@ -22,10 +24,12 @@ type DatasetVersion struct {
 	MerkleRoot      string `json:"merkleRoot"`
 	Actor           string `json:"actor"`
 	Timestamp       string `json:"timestamp"` // RFC3339 string, set by caller (not chaincode) for determinism
+	OwnerOrg        string `json:"ownerOrg"`   // current owner of this dataset version (NFT-style ownership)
 }
 
 // RegisterDatasetVersion writes a new, immutable dataset version record to the ledger.
 // It fails if a version with the same compound key already exists (immutability guarantee).
+// The registering actor becomes the initial OwnerOrg.
 func (c *DataDNAContract) RegisterDatasetVersion(
 	ctx contractapi.TransactionContextInterface,
 	datasetID string,
@@ -58,6 +62,7 @@ func (c *DataDNAContract) RegisterDatasetVersion(
 		MerkleRoot:      merkleRoot,
 		Actor:           actor,
 		Timestamp:       timestamp,
+		OwnerOrg:        actor, // whoever registers a version is its initial owner
 	}
 
 	dvBytes, err := json.Marshal(dv)
@@ -66,6 +71,81 @@ func (c *DataDNAContract) RegisterDatasetVersion(
 	}
 
 	return ctx.GetStub().PutState(key, dvBytes)
+}
+
+// TransferDatasetOwnership changes the OwnerOrg of an existing dataset version,
+// but only if callerOrg matches the CURRENT recorded owner. This is the core
+// NFT-style mechanic: a unique, immutable asset with verifiable, transferable
+// ownership. It does not touch Fingerprint, MerkleRoot, or any other field —
+// only OwnerOrg changes, so the provenance/integrity guarantees are untouched.
+func (c *DataDNAContract) TransferDatasetOwnership(
+	ctx contractapi.TransactionContextInterface,
+	datasetID string,
+	versionID string,
+	newOwnerOrg string,
+	callerOrg string,
+) error {
+	key, err := ctx.GetStub().CreateCompositeKey("datasetVersion", []string{datasetID, versionID})
+	if err != nil {
+		return fmt.Errorf("failed to create composite key: %v", err)
+	}
+
+	existing, err := ctx.GetStub().GetState(key)
+	if err != nil {
+		return fmt.Errorf("failed to read ledger: %v", err)
+	}
+	if existing == nil {
+		return fmt.Errorf("dataset version %s/%s not found on-chain", datasetID, versionID)
+	}
+
+	var dv DatasetVersion
+	if err := json.Unmarshal(existing, &dv); err != nil {
+		return fmt.Errorf("failed to unmarshal dataset version: %v", err)
+	}
+
+	if dv.OwnerOrg != callerOrg {
+		return fmt.Errorf(
+			"transfer rejected: %s is not the current owner of dataset version %s/%s (current owner: %s)",
+			callerOrg, datasetID, versionID, dv.OwnerOrg,
+		)
+	}
+
+	dv.OwnerOrg = newOwnerOrg
+
+	dvBytes, err := json.Marshal(dv)
+	if err != nil {
+		return fmt.Errorf("failed to marshal dataset version: %v", err)
+	}
+
+	return ctx.GetStub().PutState(key, dvBytes)
+}
+
+// GetDatasetOwner returns the current OwnerOrg for a given dataset version.
+// Read-only query, mirrors the pattern used by VerifyIntegrity.
+func (c *DataDNAContract) GetDatasetOwner(
+	ctx contractapi.TransactionContextInterface,
+	datasetID string,
+	versionID string,
+) (string, error) {
+	key, err := ctx.GetStub().CreateCompositeKey("datasetVersion", []string{datasetID, versionID})
+	if err != nil {
+		return "", fmt.Errorf("failed to create composite key: %v", err)
+	}
+
+	existing, err := ctx.GetStub().GetState(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to read ledger: %v", err)
+	}
+	if existing == nil {
+		return "", fmt.Errorf("dataset version %s/%s not found on-chain", datasetID, versionID)
+	}
+
+	var dv DatasetVersion
+	if err := json.Unmarshal(existing, &dv); err != nil {
+		return "", fmt.Errorf("failed to unmarshal dataset version: %v", err)
+	}
+
+	return dv.OwnerOrg, nil
 }
 
 // Transformation represents an immutable, on-chain record of one transformation

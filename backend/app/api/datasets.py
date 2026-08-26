@@ -3,11 +3,12 @@ Dataset upload API endpoints.
 """
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from pydantic import BaseModel
 
 from app.core.parsing import parse_upload, ParseError
 from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version, get_version, list_all_datasets, mark_registered_onchain
 from app.core.impact import analyze_impact
-from app.core.fabric_client import invoke, query, FabricError
+from app.core.fabric_client import invoke, invoke_as_org2, query, FabricError
 from app.core.audit import run_audit, get_audit
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -150,8 +151,12 @@ async def get_impact_analysis(version_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+class RegisterOnChainRequest(BaseModel):
+    org: str = "Org1MSP"
+
+
 @router.post("/versions/{version_id}/register-onchain")
-async def register_onchain(version_id: str):
+async def register_onchain(version_id: str, body: RegisterOnChainRequest = RegisterOnChainRequest()):
     """
     Manually register this dataset version's provenance on the Fabric ledger.
     HACKATHON SIMPLIFICATION: explicit trigger, not automatic on upload —
@@ -182,7 +187,7 @@ async def register_onchain(version_id: str):
                 version["parent_version_id"] or "",
                 version["dataset_fingerprint"],
                 "",
-                "dhruv",
+                body.org,
                 version["created_at"],
             ],
         )
@@ -212,5 +217,61 @@ async def verify_onchain(version_id: str):
             [version["dataset_id"], str(version["version_number"]), version["dataset_fingerprint"]],
         )
         return {"version_id": version_id, "verified": result}
+    except FabricError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+class TransferOwnershipRequest(BaseModel):
+    new_owner_org: str
+    caller_org: str = "Org1MSP"
+
+
+@router.post("/versions/{version_id}/transfer-ownership")
+async def transfer_ownership(version_id: str, body: TransferOwnershipRequest):
+    """
+    Transfer on-chain ownership of this dataset version to a new org.
+    Rejected by chaincode unless caller_org matches the current OwnerOrg.
+    """
+    try:
+        version = get_version(version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    invoke_fn = invoke_as_org2 if body.caller_org == "Org2MSP" else invoke
+
+    try:
+        result = invoke_fn(
+            "TransferDatasetOwnership",
+            [
+                version["dataset_id"],
+                str(version["version_number"]),
+                body.new_owner_org,
+                body.caller_org,
+            ],
+        )
+        return {
+            "version_id": version_id,
+            "status": "transferred",
+            "new_owner": body.new_owner_org,
+            "fabric_output": result,
+        }
+    except FabricError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/versions/{version_id}/owner")
+async def get_owner(version_id: str):
+    """Query Fabric ledger for this version's current OwnerOrg."""
+    try:
+        version = get_version(version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    try:
+        result = query(
+            "GetDatasetOwner",
+            [version["dataset_id"], str(version["version_number"])],
+        )
+        return {"version_id": version_id, "owner": result}
     except FabricError as e:
         raise HTTPException(status_code=502, detail=str(e))

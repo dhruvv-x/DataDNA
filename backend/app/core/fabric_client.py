@@ -31,6 +31,11 @@ ORG1_MSPCONFIGPATH = (
     "Admin@org1.example.com/msp"
 ).format(dir=TEST_NETWORK_DIR)
 
+ORG2_MSPCONFIGPATH = (
+    "{dir}/organizations/peerOrganizations/org2.example.com/users/"
+    "Admin@org2.example.com/msp"
+).format(dir=TEST_NETWORK_DIR)
+
 
 class FabricError(Exception):
     """Raised when a peer CLI invoke/query fails."""
@@ -50,9 +55,22 @@ def _build_env() -> dict:
     return env
 
 
+def _build_env_org2() -> dict:
+    """Env vars for invoking as Org2MSP admin, mirroring _build_env() for Org1."""
+    env = os.environ.copy()
+    env["PATH"] = f"{TEST_NETWORK_DIR}/../bin:" + env.get("PATH", "")
+    env["FABRIC_CFG_PATH"] = f"{TEST_NETWORK_DIR}/../config/"
+    env["CORE_PEER_TLS_ENABLED"] = "true"
+    env["CORE_PEER_LOCALMSPID"] = "Org2MSP"
+    env["CORE_PEER_TLS_ROOTCERT_FILE"] = ORG2_TLS_ROOTCERT
+    env["CORE_PEER_MSPCONFIGPATH"] = ORG2_MSPCONFIGPATH
+    env["CORE_PEER_ADDRESS"] = "localhost:9051"
+    return env
+
+
 def invoke(function: str, args: list) -> str:
     """
-    Invoke a chaincode function requiring endorsement (both orgs).
+    Invoke a chaincode function requiring endorsement (both orgs), acting as Org1.
     Returns raw stdout+stderr on success. Raises FabricError on failure.
     """
     cc_input = json.dumps({"function": function, "Args": args})
@@ -72,6 +90,36 @@ def invoke(function: str, args: list) -> str:
     ]
     result = subprocess.run(
         cmd, cwd=TEST_NETWORK_DIR, env=_build_env(),
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        raise FabricError(f"invoke failed: {result.stderr.strip()}")
+    return (result.stdout + result.stderr).strip()
+
+
+def invoke_as_org2(function: str, args: list) -> str:
+    """
+    Invoke a chaincode function requiring endorsement (both orgs), acting as Org2.
+    Same endorsement targets as invoke() — only the calling identity differs.
+    Returns raw stdout+stderr on success. Raises FabricError on failure.
+    """
+    cc_input = json.dumps({"function": function, "Args": args})
+    cmd = [
+        "peer", "chaincode", "invoke",
+        "-o", "localhost:7050",
+        "--ordererTLSHostnameOverride", "orderer.example.com",
+        "--tls",
+        "--cafile", ORDERER_CA,
+        "-C", "mychannel",
+        "-n", "datadna",
+        "--peerAddresses", "localhost:7051",
+        "--tlsRootCertFiles", ORG1_TLS_ROOTCERT,
+        "--peerAddresses", "localhost:9051",
+        "--tlsRootCertFiles", ORG2_TLS_ROOTCERT,
+        "-c", cc_input,
+    ]
+    result = subprocess.run(
+        cmd, cwd=TEST_NETWORK_DIR, env=_build_env_org2(),
         capture_output=True, text=True, timeout=30,
     )
     if result.returncode != 0:

@@ -24,8 +24,11 @@ function App() {
   const [newVersionFile, setNewVersionFile] = useState<File | null>(null)
   const [lineage, setLineage] = useState<any>(null)
 
-  const [fabricResult, setFabricResult] = useState<any>(null)
+    const [fabricResult, setFabricResult] = useState<any>(null)
   const [verifyResult, setVerifyResult] = useState<any>(null)
+  const [ownerResult, setOwnerResult] = useState<any>(null)
+  const [transferTargetOrg, setTransferTargetOrg] = useState<string>('Org2MSP')
+  const [transferResult, setTransferResult] = useState<any>(null)
 
   const [datasetHistory, setDatasetHistory] = useState<DatasetSummary[]>([])
   const [historyError, setHistoryError] = useState('')
@@ -651,6 +654,68 @@ function App() {
     }
   }
 
+    async function handleGetOwner() {
+    if (!versionId) {
+      setStatus('Load a dataset version first.')
+      return
+    }
+
+    setStatus('Fetching current owner...')
+    setOwnerResult(null)
+
+    try {
+      const response = await fetch(
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/owner`
+      )
+      const data = await response.json()
+
+      if (!response.ok) {
+        setStatus('Fetching owner failed: ' + describeError(data, 'please check the Fabric network and try again.'))
+        return
+      }
+
+      setStatus('')
+      setOwnerResult(data)
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+
+  async function handleTransferOwnership() {
+    if (!versionId) {
+      setStatus('Load a dataset version first.')
+      return
+    }
+
+    const callerOrg = ownerResult?.owner === 'Org2MSP' ? 'Org2MSP' : 'Org1MSP'
+
+    setStatus('Transferring ownership (this may take a few seconds)...')
+    setTransferResult(null)
+
+    try {
+      const response = await fetch(
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/transfer-ownership`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ new_owner_org: transferTargetOrg, caller_org: callerOrg })
+        }
+      )
+      const data = await response.json()
+
+      if (!response.ok) {
+        setStatus('Transfer ownership failed: ' + describeError(data, 'please check the Fabric network and try again.'))
+        return
+      }
+
+      setStatus('')
+      setTransferResult(data)
+      handleGetOwner()
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+
   function formatDate(iso: string) {
     try {
       return new Date(iso).toLocaleString()
@@ -1257,7 +1322,13 @@ function App() {
               <button className="primary" onClick={handleRegisterOnChain}>
                 Register On-Chain
               </button>
-              <button onClick={handleVerifyOnChain}>Verify On-Chain</button>
+                            <button onClick={handleVerifyOnChain}>Verify On-Chain</button>
+              <button onClick={handleGetOwner}>Check Owner</button>
+              <select value={transferTargetOrg} onChange={(e) => setTransferTargetOrg(e.target.value)}>
+                <option value="Org1MSP">Org1MSP</option>
+                <option value="Org2MSP">Org2MSP</option>
+              </select>
+              <button onClick={handleTransferOwnership}>Transfer Ownership</button>
 
               {fabricResult && (
                 <div className="blockchain-result">
@@ -1311,7 +1382,30 @@ function App() {
                       Not verified — mismatch with blockchain record
                     </p>
                   )}
-                  <p className="blockchain-detail">Version ID: {verifyResult.version_id}</p>
+                                   <p className="blockchain-detail">Version ID: {verifyResult.version_id}</p>
+                </div>
+              )}
+
+              {ownerResult && (
+                <div className="blockchain-result">
+                  <p className="blockchain-detail">Current Owner: {ownerResult.owner || 'unknown'}</p>
+                </div>
+              )}
+
+              {transferResult && (
+                <div className="blockchain-result">
+                  <p className="blockchain-status-ok">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M20 6L9 17l-5-5"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    Ownership transferred
+                  </p>
                 </div>
               )}
             </div>
