@@ -40,6 +40,20 @@ function App() {
   const [mintOwnerOrg, setMintOwnerOrg] = useState<string>('Org1MSP')
   const [mintTokenResult, setMintTokenResult] = useState<any>(null)
   const [tokenId, setTokenId] = useState<string>(() => localStorage.getItem('datadna-token-id') || '')
+  // Trust Stake (crypto/collateral) — an org stakes tokens against this
+  // dataset version as collateral. If the version is later found INVALID,
+  // the stake can be slashed (amount goes to 0, slashed flag set to true,
+  // record kept not deleted) via a separate manual action, same pattern as
+  // the Dataset Token hooks above. stakeAmount/stakeOrg feed the stake
+  // form; stakeCheckOrg is whichever org's balance is currently being
+  // viewed; slashOrg is whichever org's stake is about to be slashed.
+  const [stakeAmount, setStakeAmount] = useState<string>('')
+  const [stakeOrg, setStakeOrg] = useState<string>('Org1MSP')
+  const [stakeResult, setStakeResult] = useState<any>(null)
+  const [stakeCheckOrg, setStakeCheckOrg] = useState<string>('Org1MSP')
+  const [stakeBalanceResult, setStakeBalanceResult] = useState<any>(null)
+  const [slashOrg, setSlashOrg] = useState<string>('Org1MSP')
+  const [slashResult, setSlashResult] = useState<any>(null)
   const [tokenOwnerResult, setTokenOwnerResult] = useState<any>(null)
   const [tokenTransferTargetOrg, setTokenTransferTargetOrg] = useState<string>('Org2MSP')
   const [tokenTransferResult, setTokenTransferResult] = useState<any>(null)
@@ -849,6 +863,90 @@ function App() {
       setStatus('Error: could not reach backend.')
     }
   }
+  async function handleStakeTokens() {
+    if (!versionId) {
+      setStatus('Load a dataset version first.')
+      return
+    }
+    if (!stakeAmount) {
+      setStatus('Enter a stake amount first.')
+      return
+    }
+    setStatus('Staking tokens (this may take a few seconds)...')
+    setStakeResult(null)
+    try {
+      const response = await fetch(
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/stake`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staker_org: stakeOrg, amount: parseInt(stakeAmount, 10), caller_org: 'Org1MSP' })
+        }
+      )
+      const data = await response.json()
+      if (!response.ok) {
+        setStatus('Stake failed: ' + describeError(data, 'please check the Fabric network and try again.'))
+        return
+      }
+      setStatus('')
+      setStakeResult(data)
+      // Auto-fill the balance-check org with whoever just staked, same
+      // convenience as mint auto-filling tokenId for the controls below.
+      setStakeCheckOrg(stakeOrg)
+      setStakeAmount('')
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+  async function handleGetStakeBalance() {
+    if (!versionId) {
+      setStatus('Load a dataset version first.')
+      return
+    }
+    setStatus('Fetching stake balance...')
+    setStakeBalanceResult(null)
+    try {
+      const response = await fetch(
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/stake-balance?staker_org=${stakeCheckOrg}`
+      )
+      const data = await response.json()
+      if (!response.ok) {
+        setStatus('Fetching stake balance failed: ' + describeError(data, 'please check the Fabric network and try again.'))
+        return
+      }
+      setStatus('')
+      setStakeBalanceResult(data)
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+  async function handleSlashStake() {
+    if (!versionId) {
+      setStatus('Load a dataset version first.')
+      return
+    }
+    setStatus('Slashing stake (this may take a few seconds)...')
+    setSlashResult(null)
+    try {
+      const response = await fetch(
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/slash-stake`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ staker_org: slashOrg, caller_org: 'Org1MSP' })
+        }
+      )
+      const data = await response.json()
+      if (!response.ok) {
+        setStatus('Slash stake failed: ' + describeError(data, 'please check the Fabric network and try again.'))
+        return
+      }
+      setStatus('')
+      setSlashResult(data)
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
 
   function formatDate(iso: string) {
     try {
@@ -1624,6 +1722,91 @@ function App() {
                     </svg>
                     Token transferred
                   </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {versionId && (
+            <div className="section">
+              <h2>Trust Stake</h2>
+              <p className="hint-text">
+                An org stakes tokens against this dataset version as collateral. If the version is later found invalid, the stake can be slashed — the amount goes to zero and the record is marked slashed, not deleted.
+              </p>
+
+              <div className="form-row">
+                <input
+                  type="number"
+                  placeholder="Amount to stake (e.g. 100)"
+                  value={stakeAmount}
+                  onChange={(e) => setStakeAmount(e.target.value)}
+                />
+                <select value={stakeOrg} onChange={(e) => setStakeOrg(e.target.value)}>
+                  <option value="Org1MSP">Org1MSP</option>
+                  <option value="Org2MSP">Org2MSP</option>
+                </select>
+                <button className="primary" onClick={handleStakeTokens}>
+                  Stake Tokens
+                </button>
+              </div>
+
+              {stakeResult && (
+                <div className="blockchain-result">
+                  <p className="blockchain-status-ok">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M20 6L9 17l-5-5"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    Stake placed
+                  </p>
+                  <p className="blockchain-detail">Staker: {stakeResult.staker_org} — Amount: {stakeResult.amount}</p>
+                </div>
+              )}
+
+              <div className="form-row">
+                <select value={stakeCheckOrg} onChange={(e) => setStakeCheckOrg(e.target.value)}>
+                  <option value="Org1MSP">Org1MSP</option>
+                  <option value="Org2MSP">Org2MSP</option>
+                </select>
+                <button onClick={handleGetStakeBalance}>Check Stake Balance</button>
+              </div>
+
+              {stakeBalanceResult && (
+                <div className="blockchain-result">
+                  <p className="blockchain-detail">
+                    Amount: {stakeBalanceResult.stake_balance?.amount ?? 'unknown'} — Slashed: {String(stakeBalanceResult.stake_balance?.slashed ?? 'unknown')}
+                  </p>
+                </div>
+              )}
+
+              <div className="form-row">
+                <select value={slashOrg} onChange={(e) => setSlashOrg(e.target.value)}>
+                  <option value="Org1MSP">Org1MSP</option>
+                  <option value="Org2MSP">Org2MSP</option>
+                </select>
+                <button onClick={handleSlashStake}>Slash Stake</button>
+              </div>
+
+              {slashResult && (
+                <div className="blockchain-result">
+                  <p className="blockchain-status-ok">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M20 6L9 17l-5-5"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    Stake slashed
+                  </p>
+                  <p className="blockchain-detail">Staker: {slashResult.staker_org}</p>
                 </div>
               )}
             </div>

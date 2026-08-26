@@ -441,6 +441,155 @@ func (c *DataDNAContract) GetTokenOwner(
 	return dt.Owner, nil
 }
 
+// StakeBalance represents tokens an org has put up as collateral when
+// registering a dataset version — the cryptocurrency half of the system.
+// If the underlying dataset version is later marked INVALID, this stake
+// can be slashed (see SlashStake). One stake record per (dataset version, staker).
+type StakeBalance struct {
+	DocType   string `json:"docType"` // "stakeBalance" - used to distinguish record types in the ledger
+	DatasetID string `json:"datasetId"`
+	VersionID string `json:"versionId"`
+	StakerOrg string `json:"stakerOrg"`
+	Amount    int    `json:"amount"`
+	Slashed   bool   `json:"slashed"`
+	Timestamp string `json:"timestamp"` // RFC3339 string, set by caller for determinism
+}
+
+// StakeTokens records a new stake of `amount` tokens by stakerOrg against an
+// already-registered dataset version. It fails if the underlying dataset
+// version does not exist on-chain (mirrors MintDatasetToken's guard), if
+// amount is not positive, or if this org has already staked on this version
+// (mint-once, mirrors the immutability guarantee used elsewhere).
+func (c *DataDNAContract) StakeTokens(
+	ctx contractapi.TransactionContextInterface,
+	datasetID string,
+	versionID string,
+	stakerOrg string,
+	amount int,
+	timestamp string,
+) error {
+	if amount <= 0 {
+		return fmt.Errorf("stake amount must be positive, got %d", amount)
+	}
+
+	versionKey, err := ctx.GetStub().CreateCompositeKey("datasetVersion", []string{datasetID, versionID})
+	if err != nil {
+		return fmt.Errorf("failed to create composite key: %v", err)
+	}
+
+	versionExisting, err := ctx.GetStub().GetState(versionKey)
+	if err != nil {
+		return fmt.Errorf("failed to read ledger: %v", err)
+	}
+	if versionExisting == nil {
+		return fmt.Errorf("cannot stake: dataset version %s/%s not found on-chain", datasetID, versionID)
+	}
+
+	stakeKey, err := ctx.GetStub().CreateCompositeKey("stakeBalance", []string{datasetID, versionID, stakerOrg})
+	if err != nil {
+		return fmt.Errorf("failed to create composite key: %v", err)
+	}
+
+	stakeExisting, err := ctx.GetStub().GetState(stakeKey)
+	if err != nil {
+		return fmt.Errorf("failed to read ledger: %v", err)
+	}
+	if stakeExisting != nil {
+		return fmt.Errorf("%s has already staked on dataset version %s/%s", stakerOrg, datasetID, versionID)
+	}
+
+	sb := StakeBalance{
+		DocType:   "stakeBalance",
+		DatasetID: datasetID,
+		VersionID: versionID,
+		StakerOrg: stakerOrg,
+		Amount:    amount,
+		Slashed:   false,
+		Timestamp: timestamp,
+	}
+
+	sbBytes, err := json.Marshal(sb)
+	if err != nil {
+		return fmt.Errorf("failed to marshal stake balance: %v", err)
+	}
+
+	return ctx.GetStub().PutState(stakeKey, sbBytes)
+}
+
+// SlashStake penalizes an existing stake by marking it Slashed and zeroing
+// its Amount, typically called when a dataset version is found INVALID.
+// It fails if no stake exists for this (datasetID, versionID, stakerOrg),
+// or if that stake has already been slashed (cannot slash twice).
+func (c *DataDNAContract) SlashStake(
+	ctx contractapi.TransactionContextInterface,
+	datasetID string,
+	versionID string,
+	stakerOrg string,
+) error {
+	stakeKey, err := ctx.GetStub().CreateCompositeKey("stakeBalance", []string{datasetID, versionID, stakerOrg})
+	if err != nil {
+		return fmt.Errorf("failed to create composite key: %v", err)
+	}
+
+	existing, err := ctx.GetStub().GetState(stakeKey)
+	if err != nil {
+		return fmt.Errorf("failed to read ledger: %v", err)
+	}
+	if existing == nil {
+		return fmt.Errorf("no stake found for %s on dataset version %s/%s", stakerOrg, datasetID, versionID)
+	}
+
+	var sb StakeBalance
+	if err := json.Unmarshal(existing, &sb); err != nil {
+		return fmt.Errorf("failed to unmarshal stake balance: %v", err)
+	}
+
+	if sb.Slashed {
+		return fmt.Errorf("stake for %s on dataset version %s/%s has already been slashed", stakerOrg, datasetID, versionID)
+	}
+
+	sb.Slashed = true
+	sb.Amount = 0
+
+	sbBytes, err := json.Marshal(sb)
+	if err != nil {
+		return fmt.Errorf("failed to marshal stake balance: %v", err)
+	}
+
+	return ctx.GetStub().PutState(stakeKey, sbBytes)
+}
+
+
+// GetStakeBalance returns the current StakeBalance for a given
+// (datasetID, versionID, stakerOrg). Read-only query, mirrors the pattern
+// used by GetTokenOwner and GetDatasetOwner.
+func (c *DataDNAContract) GetStakeBalance(
+	ctx contractapi.TransactionContextInterface,
+	datasetID string,
+	versionID string,
+	stakerOrg string,
+) (*StakeBalance, error) {
+	stakeKey, err := ctx.GetStub().CreateCompositeKey("stakeBalance", []string{datasetID, versionID, stakerOrg})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create composite key: %v", err)
+	}
+
+	existing, err := ctx.GetStub().GetState(stakeKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read ledger: %v", err)
+	}
+	if existing == nil {
+		return nil, fmt.Errorf("no stake found for %s on dataset version %s/%s", stakerOrg, datasetID, versionID)
+	}
+
+	var sb StakeBalance
+	if err := json.Unmarshal(existing, &sb); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal stake balance: %v", err)
+	}
+
+	return &sb, nil
+}
+
 // GetDatasetVersionHistory returns all dataset version records for a given
 // datasetID, in the order the ledger's iterator returns them (not guaranteed
 // to be chronological -- callers should sort by Timestamp or walk ParentVersionID

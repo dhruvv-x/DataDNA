@@ -4,6 +4,7 @@ Dataset upload API endpoints.
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
+import json
 from datetime import datetime, timezone
 from app.core.parsing import parse_upload, ParseError
 from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version, get_version, list_all_datasets, mark_registered_onchain
@@ -356,3 +357,94 @@ async def get_token_owner(token_id: str):
         return {"token_id": token_id, "owner": result}
     except FabricError as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+
+class StakeTokensRequest(BaseModel):
+    staker_org: str = "Org1MSP"
+    amount: int
+    caller_org: str = "Org1MSP"
+
+
+@router.post("/versions/{version_id}/stake")
+async def stake_tokens(version_id: str, body: StakeTokensRequest):
+    """
+    Stake tokens against this dataset version as collateral. Fails if the
+    version isn't registered on-chain yet, or if staker_org has already
+    staked on this version (enforced by chaincode).
+    """
+    try:
+        version = get_version(version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    invoke_fn = invoke_as_org2 if body.caller_org == "Org2MSP" else invoke
+    try:
+        result = invoke_fn(
+            "StakeTokens",
+            [
+                version["dataset_id"],
+                str(version["version_number"]),
+                body.staker_org,
+                str(body.amount),
+                datetime.now(timezone.utc).isoformat(),
+            ],
+        )
+        return {
+            "version_id": version_id,
+            "staker_org": body.staker_org,
+            "amount": body.amount,
+            "status": "staked",
+            "fabric_output": result,
+        }
+    except FabricError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+class SlashStakeRequest(BaseModel):
+    staker_org: str = "Org1MSP"
+    caller_org: str = "Org1MSP"
+
+
+@router.post("/versions/{version_id}/slash-stake")
+async def slash_stake(version_id: str, body: SlashStakeRequest):
+    """
+    Slash an existing stake on this dataset version (e.g. after it's been
+    marked INVALID). Fails if no stake exists, or if it was already slashed.
+    """
+    try:
+        version = get_version(version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    invoke_fn = invoke_as_org2 if body.caller_org == "Org2MSP" else invoke
+    try:
+        result = invoke_fn(
+            "SlashStake",
+            [version["dataset_id"], str(version["version_number"]), body.staker_org],
+        )
+        return {
+            "version_id": version_id,
+            "staker_org": body.staker_org,
+            "status": "slashed",
+            "fabric_output": result,
+        }
+    except FabricError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/versions/{version_id}/stake-balance")
+async def get_stake_balance(version_id: str, staker_org: str = "Org1MSP"):
+    """Query Fabric ledger for a StakeBalance on this dataset version."""
+    try:
+        version = get_version(version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    try:
+        result = query(
+            "GetStakeBalance",
+            [version["dataset_id"], str(version["version_number"]), staker_org],
+        )
+        stake_balance = json.loads(result)
+        return {"version_id": version_id, "staker_org": staker_org, "stake_balance": stake_balance}
+    except FabricError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=502, detail=f"failed to parse stake balance from chaincode: {e}")
