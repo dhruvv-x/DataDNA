@@ -9,7 +9,9 @@ import subprocess
 import json
 import os
 
-TEST_NETWORK_DIR = "/home/dhruv/fabric/fabric-samples/test-network"
+TEST_NETWORK_DIR = os.environ.get(
+    "TEST_NETWORK_HOME", "/home/dhruv/fabric/fabric-samples/test-network"
+)
 
 ORDERER_CA = (
     "{dir}/organizations/ordererOrganizations/example.com/orderers/"

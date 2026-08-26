@@ -30,6 +30,20 @@ function App() {
   const [transferTargetOrg, setTransferTargetOrg] = useState<string>('Org2MSP')
   const [transferResult, setTransferResult] = useState<any>(null)
 
+  // Dataset Token (NFT-equivalent) — a token here represents provable
+  // ownership of one specific dataset version, the same idea as an NFT
+  // representing ownership of a digital item. mintTokenId/mintOwnerOrg feed
+  // the mint form; tokenId is whichever token is currently being tracked for
+  // owner-check/transfer (auto-filled after a successful mint, same as how
+  // versionId drives the dataset-ownership controls above).
+  const [mintTokenId, setMintTokenId] = useState<string>('')
+  const [mintOwnerOrg, setMintOwnerOrg] = useState<string>('Org1MSP')
+  const [mintTokenResult, setMintTokenResult] = useState<any>(null)
+  const [tokenId, setTokenId] = useState<string>(() => localStorage.getItem('datadna-token-id') || '')
+  const [tokenOwnerResult, setTokenOwnerResult] = useState<any>(null)
+  const [tokenTransferTargetOrg, setTokenTransferTargetOrg] = useState<string>('Org2MSP')
+  const [tokenTransferResult, setTokenTransferResult] = useState<any>(null)
+
   const [datasetHistory, setDatasetHistory] = useState<DatasetSummary[]>([])
   const [historyError, setHistoryError] = useState('')
 
@@ -79,9 +93,26 @@ function App() {
   const uploadFileInputRef = useRef<HTMLInputElement>(null)
   const newVersionFileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
+    useEffect(() => {
     fetchDatasetHistory()
     fetchModels()
+  }, [])
+
+  // Persist the last-checked token ID so it survives a page refresh —
+  // same idea as the theme setting above.
+  useEffect(() => {
+    if (tokenId) {
+      localStorage.setItem('datadna-token-id', tokenId)
+    }
+  }, [tokenId])
+
+  // On page load, if a token ID was remembered, auto-check its current
+  // owner so the "Current Owner" box isn't empty after a refresh.
+  useEffect(() => {
+    if (tokenId) {
+      handleGetTokenOwner()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function fetchDatasetHistory() {
@@ -711,6 +742,109 @@ function App() {
       setStatus('')
       setTransferResult(data)
       handleGetOwner()
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+
+  async function handleMintToken() {
+    if (!versionId) {
+      setStatus('Load a dataset version first.')
+      return
+    }
+    if (!mintTokenId) {
+      setStatus('Enter a token ID first.')
+      return
+    }
+
+    setStatus('Minting dataset token (this may take a few seconds)...')
+    setMintTokenResult(null)
+
+    try {
+      const response = await fetch(
+        `http://172.20.34.59:8000/datasets/versions/${versionId}/mint-token`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token_id: mintTokenId, owner: mintOwnerOrg, caller_org: 'Org1MSP' })
+        }
+      )
+      const data = await response.json()
+
+      if (!response.ok) {
+        setStatus('Mint token failed: ' + describeError(data, 'please check the Fabric network and try again.'))
+        return
+      }
+
+      setStatus('')
+      setMintTokenResult(data)
+      // Auto-fill the tracked token ID with what was just minted, so the
+      // owner-check/transfer controls below act on it immediately — same
+      // convenience as versionId driving the dataset-ownership controls.
+      setTokenId(mintTokenId)
+      setMintTokenId('')
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+
+  async function handleGetTokenOwner() {
+    if (!tokenId) {
+      setStatus('Enter a token ID first.')
+      return
+    }
+
+    setStatus('Fetching token owner...')
+    setTokenOwnerResult(null)
+
+    try {
+      const response = await fetch(
+        `http://172.20.34.59:8000/datasets/tokens/${tokenId}/owner`
+      )
+      const data = await response.json()
+
+      if (!response.ok) {
+        setStatus('Fetching token owner failed: ' + describeError(data, 'please check the Fabric network and try again.'))
+        return
+      }
+
+      setStatus('')
+      setTokenOwnerResult(data)
+    } catch (error) {
+      setStatus('Error: could not reach backend.')
+    }
+  }
+
+  async function handleTransferToken() {
+    if (!tokenId) {
+      setStatus('Enter a token ID first.')
+      return
+    }
+
+    const callerOrg = tokenOwnerResult?.owner === 'Org2MSP' ? 'Org2MSP' : 'Org1MSP'
+
+    setStatus('Transferring token (this may take a few seconds)...')
+    setTokenTransferResult(null)
+
+    try {
+      const response = await fetch(
+        `http://172.20.34.59:8000/datasets/tokens/${tokenId}/transfer`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ new_owner: tokenTransferTargetOrg, caller_org: callerOrg })
+        }
+      )
+      const data = await response.json()
+
+      if (!response.ok) {
+        setStatus('Transfer token failed: ' + describeError(data, 'please check the Fabric network and try again.'))
+        return
+      }
+
+      setStatus('')
+      setTokenTransferResult(data)
+      handleGetTokenOwner()
     } catch (error) {
       setStatus('Error: could not reach backend.')
     }
@@ -1405,6 +1539,90 @@ function App() {
                       />
                     </svg>
                     Ownership transferred
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {versionId && (
+            <div className="section">
+              <h2>Dataset Token</h2>
+              <p className="hint-text">
+                A token here proves ownership of this exact dataset version — the same idea as an NFT proving ownership of a digital item.
+              </p>
+
+              <div className="form-row">
+                <input
+                  type="text"
+                  placeholder="Token ID (e.g. token-1)"
+                  value={mintTokenId}
+                  onChange={(e) => setMintTokenId(e.target.value)}
+                />
+                <select value={mintOwnerOrg} onChange={(e) => setMintOwnerOrg(e.target.value)}>
+                  <option value="Org1MSP">Org1MSP</option>
+                  <option value="Org2MSP">Org2MSP</option>
+                </select>
+                <button className="primary" onClick={handleMintToken}>
+                  Mint Token
+                </button>
+              </div>
+
+              {mintTokenResult && (
+                <div className="blockchain-result">
+                  <p className="blockchain-status-ok">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M20 6L9 17l-5-5"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    Token minted
+                  </p>
+                  <p className="blockchain-detail">Token ID: {tokenId}</p>
+                </div>
+              )}
+
+              <div className="form-row">
+                <input
+                  type="text"
+                  placeholder="Token ID to check/transfer"
+                  value={tokenId}
+                  onChange={(e) => setTokenId(e.target.value)}
+                />
+                <button onClick={handleGetTokenOwner}>Check Token Owner</button>
+              </div>
+
+              {tokenOwnerResult && (
+                <div className="blockchain-result">
+                  <p className="blockchain-detail">Current Owner: {tokenOwnerResult.owner || 'unknown'}</p>
+                </div>
+              )}
+
+              <div className="form-row">
+                <select value={tokenTransferTargetOrg} onChange={(e) => setTokenTransferTargetOrg(e.target.value)}>
+                  <option value="Org1MSP">Org1MSP</option>
+                  <option value="Org2MSP">Org2MSP</option>
+                </select>
+                <button onClick={handleTransferToken}>Transfer Token</button>
+              </div>
+
+              {tokenTransferResult && (
+                <div className="blockchain-result">
+                  <p className="blockchain-status-ok">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M20 6L9 17l-5-5"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    Token transferred
                   </p>
                 </div>
               )}

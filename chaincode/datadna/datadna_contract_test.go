@@ -259,6 +259,95 @@ func TestGetDatasetOwner_NotFound(t *testing.T) {
 	require.Error(t, err, "looking up the owner of a non-existent version must return an error")
 }
 
+func TestMintDatasetToken_Success(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, _ := newMockContext()
+
+	// A token can only be minted for a version that already exists on-chain.
+	err := contract.RegisterDatasetVersion(
+		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
+	)
+	require.NoError(t, err)
+
+	err = contract.MintDatasetToken(ctx, "token-1", "cropdisease", "v1", "Org1MSP", "Org1MSP", "2026-08-13T18:05:00Z")
+	require.NoError(t, err, "minting a token for an existing version should succeed")
+
+	owner, err := contract.GetTokenOwner(ctx, "token-1")
+	require.NoError(t, err)
+	require.Equal(t, "Org1MSP", owner, "minted token should be owned by the given owner")
+}
+
+func TestMintDatasetToken_RejectedIfVersionMissing(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, _ := newMockContext()
+
+	err := contract.MintDatasetToken(ctx, "token-1", "cropdisease", "v99", "Org1MSP", "Org1MSP", "2026-08-13T18:05:00Z")
+	require.Error(t, err, "minting a token for a non-existent dataset version must be rejected")
+}
+
+func TestMintDatasetToken_DuplicateRejected(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, _ := newMockContext()
+
+	err := contract.RegisterDatasetVersion(
+		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
+	)
+	require.NoError(t, err)
+
+	err1 := contract.MintDatasetToken(ctx, "token-1", "cropdisease", "v1", "Org1MSP", "Org1MSP", "2026-08-13T18:05:00Z")
+	require.NoError(t, err1)
+
+	err2 := contract.MintDatasetToken(ctx, "token-1", "cropdisease", "v1", "Org2MSP", "attacker", "2026-08-13T19:00:00Z")
+	require.Error(t, err2, "minting the same tokenID twice must be rejected (mint-once)")
+}
+
+func TestTransferToken_Success(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, _ := newMockContext()
+
+	require.NoError(t, contract.RegisterDatasetVersion(
+		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
+	))
+	require.NoError(t, contract.MintDatasetToken(
+		ctx, "token-1", "cropdisease", "v1", "Org1MSP", "Org1MSP", "2026-08-13T18:05:00Z",
+	))
+
+	err := contract.TransferToken(ctx, "token-1", "Org2MSP", "Org1MSP")
+	require.NoError(t, err, "transfer by the real current owner should succeed")
+
+	owner, err := contract.GetTokenOwner(ctx, "token-1")
+	require.NoError(t, err)
+	require.Equal(t, "Org2MSP", owner, "owner should now be Org2MSP after transfer")
+}
+
+func TestTransferToken_RejectedIfNotOwner(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, _ := newMockContext()
+
+	require.NoError(t, contract.RegisterDatasetVersion(
+		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
+	))
+	require.NoError(t, contract.MintDatasetToken(
+		ctx, "token-1", "cropdisease", "v1", "Org1MSP", "Org1MSP", "2026-08-13T18:05:00Z",
+	))
+
+	// Org2 (NOT the owner) tries to transfer it to itself — must be rejected.
+	err := contract.TransferToken(ctx, "token-1", "Org2MSP", "Org2MSP")
+	require.Error(t, err, "transfer attempted by a non-owner must be rejected")
+
+	owner, getErr := contract.GetTokenOwner(ctx, "token-1")
+	require.NoError(t, getErr)
+	require.Equal(t, "Org1MSP", owner, "ownership must NOT change after a rejected transfer")
+}
+
+func TestGetTokenOwner_NotFound(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, _ := newMockContext()
+
+	_, err := contract.GetTokenOwner(ctx, "token-does-not-exist")
+	require.Error(t, err, "looking up the owner of a non-existent token must return an error")
+}
+
 // newMockIterator builds a mocks.StateQueryIterator backed by a static snapshot
 // of matching keys/values from the given stub's ledger, filtered by composite-key prefix.
 func newMockIterator(stub *mocks.ChaincodeStub, objType string, attrs []string) *mocks.StateQueryIterator {

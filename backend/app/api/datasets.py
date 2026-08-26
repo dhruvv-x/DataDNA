@@ -4,7 +4,7 @@ Dataset upload API endpoints.
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
-
+from datetime import datetime, timezone
 from app.core.parsing import parse_upload, ParseError
 from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version, get_version, list_all_datasets, mark_registered_onchain
 from app.core.impact import analyze_impact
@@ -273,5 +273,86 @@ async def get_owner(version_id: str):
             [version["dataset_id"], str(version["version_number"])],
         )
         return {"version_id": version_id, "owner": result}
+    except FabricError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    
+
+class MintTokenRequest(BaseModel):
+    token_id: str
+    owner: str = "Org1MSP"
+    caller_org: str = "Org1MSP"
+
+
+@router.post("/versions/{version_id}/mint-token")
+async def mint_token(version_id: str, body: MintTokenRequest):
+    """
+    Mint a new DatasetToken (NFT-equivalent) for this dataset version.
+    Fails if the underlying version isn't registered on-chain yet, or if
+    token_id has already been minted (mint-once, enforced by chaincode).
+    """
+    try:
+        version = get_version(version_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    invoke_fn = invoke_as_org2 if body.caller_org == "Org2MSP" else invoke
+
+    try:
+        result = invoke_fn(
+            "MintDatasetToken",
+            [
+                body.token_id,
+                version["dataset_id"],
+                str(version["version_number"]),
+                body.owner,
+                body.caller_org,
+                datetime.now(timezone.utc).isoformat(),
+            ],
+        )
+        return {
+            "version_id": version_id,
+            "token_id": body.token_id,
+            "status": "minted",
+            "owner": body.owner,
+            "fabric_output": result,
+        }
+    except FabricError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+class TransferTokenRequest(BaseModel):
+    new_owner: str
+    caller_org: str = "Org1MSP"
+
+
+@router.post("/tokens/{token_id}/transfer")
+async def transfer_token(token_id: str, body: TransferTokenRequest):
+    """
+    Transfer ownership of a minted DatasetToken to a new org.
+    Rejected by chaincode unless caller_org matches the token's current owner.
+    """
+    invoke_fn = invoke_as_org2 if body.caller_org == "Org2MSP" else invoke
+
+    try:
+        result = invoke_fn(
+            "TransferToken",
+            [token_id, body.new_owner, body.caller_org],
+        )
+        return {
+            "token_id": token_id,
+            "status": "transferred",
+            "new_owner": body.new_owner,
+            "fabric_output": result,
+        }
+    except FabricError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/tokens/{token_id}/owner")
+async def get_token_owner(token_id: str):
+    """Query Fabric ledger for a DatasetToken's current owner."""
+    try:
+        result = query("GetTokenOwner", [token_id])
+        return {"token_id": token_id, "owner": result}
     except FabricError as e:
         raise HTTPException(status_code=502, detail=str(e))
