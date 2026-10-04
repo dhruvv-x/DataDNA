@@ -1,0 +1,26 @@
+# Local PostgreSQL for the Faculty Compliance & Trust Engine.
+#   docker compose up -d db      (start)
+#   docker compose stop db       (stop, data stays)
+#   docker compose down          (remove container, data stays in the volume)
+# Dev password below is for your own laptop only. Real deployments set it in .env (see S19).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: compliance_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-compliance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-compliance_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-compliance}
+    ports:
+      - "127.0.0.1:5432:5432"   # only this computer can connect
+    volumes:
+      - compliance_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-compliance} -d ${POSTGRES_DB:-compliance}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  compliance_pgdata:
