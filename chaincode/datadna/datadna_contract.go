@@ -7,29 +7,49 @@ import (
 	"github.com/hyperledger/fabric-contract-api-go/v2/contractapi"
 )
 
-// DataDNAContract provides functions for managing dataset provenance
+// DataDNAContract provides functions for recording version provenance on the ledger.
+//
+// Identity rule: the organisation that performed a write is NEVER taken from a
+// function argument. It is read from the client certificate of the transaction
+// (ctx.GetClientIdentity().GetMSPID()), which the peer has already validated.
 type DataDNAContract struct {
 	contractapi.Contract
 }
 
+// callerMSP returns the MSP ID of the identity that submitted this transaction.
+// It fails if no identity is available or the MSP ID is empty, so a write can
+// never be recorded without a verified author.
+func callerMSP(ctx contractapi.TransactionContextInterface) (string, error) {
+	identity := ctx.GetClientIdentity()
+	if identity == nil {
+		return "", fmt.Errorf("no client identity available for this transaction")
+	}
+	msp, err := identity.GetMSPID()
+	if err != nil {
+		return "", fmt.Errorf("failed to read caller MSP ID: %v", err)
+	}
+	if msp == "" {
+		return "", fmt.Errorf("caller MSP ID is empty")
+	}
+	return msp, nil
+}
+
 // DatasetVersion represents an immutable, on-chain record of one dataset version.
-// OwnerOrg is the org that currently owns/controls this version (NFT-style ownership) —
-// it starts as the registering actor and can change via TransferDatasetOwnership.
+// Actor is the MSP ID of the organisation that registered it (from the certificate).
 type DatasetVersion struct {
 	DocType         string `json:"docType"` // "datasetVersion" - used to distinguish record types in the ledger
 	DatasetID       string `json:"datasetId"`
-	VersionID       string `json:"versionId"`
+	VersionID       string `json:"versionId"`       // the backend passes the version number here
 	ParentVersionID string `json:"parentVersionId"` // empty string if this is V1
-	Fingerprint     string `json:"fingerprint"`      // dataset-level SHA-256 fingerprint
+	Fingerprint     string `json:"fingerprint"`     // dataset-level SHA-256 fingerprint
 	MerkleRoot      string `json:"merkleRoot"`
-	Actor           string `json:"actor"`
+	Actor           string `json:"actor"`     // MSP ID taken from the caller certificate
 	Timestamp       string `json:"timestamp"` // RFC3339 string, set by caller (not chaincode) for determinism
-	OwnerOrg        string `json:"ownerOrg"`   // current owner of this dataset version (NFT-style ownership)
 }
 
 // RegisterDatasetVersion writes a new, immutable dataset version record to the ledger.
 // It fails if a version with the same compound key already exists (immutability guarantee).
-// The registering actor becomes the initial OwnerOrg.
+// The recorded Actor is the caller's MSP ID, not a caller supplied value.
 func (c *DataDNAContract) RegisterDatasetVersion(
 	ctx contractapi.TransactionContextInterface,
 	datasetID string,
@@ -37,9 +57,13 @@ func (c *DataDNAContract) RegisterDatasetVersion(
 	parentVersionID string,
 	fingerprint string,
 	merkleRoot string,
-	actor string,
 	timestamp string,
 ) error {
+	actor, err := callerMSP(ctx)
+	if err != nil {
+		return err
+	}
+
 	key, err := ctx.GetStub().CreateCompositeKey("datasetVersion", []string{datasetID, versionID})
 	if err != nil {
 		return fmt.Errorf("failed to create composite key: %v", err)
@@ -62,7 +86,6 @@ func (c *DataDNAContract) RegisterDatasetVersion(
 		MerkleRoot:      merkleRoot,
 		Actor:           actor,
 		Timestamp:       timestamp,
-		OwnerOrg:        actor, // whoever registers a version is its initial owner
 	}
 
 	dvBytes, err := json.Marshal(dv)
@@ -71,94 +94,19 @@ func (c *DataDNAContract) RegisterDatasetVersion(
 	}
 
 	return ctx.GetStub().PutState(key, dvBytes)
-}
-
-// TransferDatasetOwnership changes the OwnerOrg of an existing dataset version,
-// but only if callerOrg matches the CURRENT recorded owner. This is the core
-// NFT-style mechanic: a unique, immutable asset with verifiable, transferable
-// ownership. It does not touch Fingerprint, MerkleRoot, or any other field —
-// only OwnerOrg changes, so the provenance/integrity guarantees are untouched.
-func (c *DataDNAContract) TransferDatasetOwnership(
-	ctx contractapi.TransactionContextInterface,
-	datasetID string,
-	versionID string,
-	newOwnerOrg string,
-	callerOrg string,
-) error {
-	key, err := ctx.GetStub().CreateCompositeKey("datasetVersion", []string{datasetID, versionID})
-	if err != nil {
-		return fmt.Errorf("failed to create composite key: %v", err)
-	}
-
-	existing, err := ctx.GetStub().GetState(key)
-	if err != nil {
-		return fmt.Errorf("failed to read ledger: %v", err)
-	}
-	if existing == nil {
-		return fmt.Errorf("dataset version %s/%s not found on-chain", datasetID, versionID)
-	}
-
-	var dv DatasetVersion
-	if err := json.Unmarshal(existing, &dv); err != nil {
-		return fmt.Errorf("failed to unmarshal dataset version: %v", err)
-	}
-
-	if dv.OwnerOrg != callerOrg {
-		return fmt.Errorf(
-			"transfer rejected: %s is not the current owner of dataset version %s/%s (current owner: %s)",
-			callerOrg, datasetID, versionID, dv.OwnerOrg,
-		)
-	}
-
-	dv.OwnerOrg = newOwnerOrg
-
-	dvBytes, err := json.Marshal(dv)
-	if err != nil {
-		return fmt.Errorf("failed to marshal dataset version: %v", err)
-	}
-
-	return ctx.GetStub().PutState(key, dvBytes)
-}
-
-// GetDatasetOwner returns the current OwnerOrg for a given dataset version.
-// Read-only query, mirrors the pattern used by VerifyIntegrity.
-func (c *DataDNAContract) GetDatasetOwner(
-	ctx contractapi.TransactionContextInterface,
-	datasetID string,
-	versionID string,
-) (string, error) {
-	key, err := ctx.GetStub().CreateCompositeKey("datasetVersion", []string{datasetID, versionID})
-	if err != nil {
-		return "", fmt.Errorf("failed to create composite key: %v", err)
-	}
-
-	existing, err := ctx.GetStub().GetState(key)
-	if err != nil {
-		return "", fmt.Errorf("failed to read ledger: %v", err)
-	}
-	if existing == nil {
-		return "", fmt.Errorf("dataset version %s/%s not found on-chain", datasetID, versionID)
-	}
-
-	var dv DatasetVersion
-	if err := json.Unmarshal(existing, &dv); err != nil {
-		return "", fmt.Errorf("failed to unmarshal dataset version: %v", err)
-	}
-
-	return dv.OwnerOrg, nil
 }
 
 // Transformation represents an immutable, on-chain record of one transformation
 // event that produced a new dataset version from a parent version.
 type Transformation struct {
-	DocType             string `json:"docType"` // "transformation"
-	DatasetID           string `json:"datasetId"`
-	FromVersionID       string `json:"fromVersionId"`
-	ToVersionID         string `json:"toVersionId"`
-	TransformationType  string `json:"transformationType"` // e.g. "remove_duplicates", "normalize"
-	Parameters          string `json:"parameters"`          // JSON-encoded params, stored as string (chaincode does not interpret it)
-	Actor               string `json:"actor"`
-	Timestamp           string `json:"timestamp"`
+	DocType            string `json:"docType"` // "transformation"
+	DatasetID          string `json:"datasetId"`
+	FromVersionID      string `json:"fromVersionId"`
+	ToVersionID        string `json:"toVersionId"`
+	TransformationType string `json:"transformationType"` // e.g. "remove_duplicates", "normalize"
+	Parameters         string `json:"parameters"`         // JSON-encoded params, stored as string (chaincode does not interpret it)
+	Actor              string `json:"actor"`              // MSP ID taken from the caller certificate
+	Timestamp          string `json:"timestamp"`
 }
 
 // RegisterTransformation writes a new, immutable transformation record to the ledger.
@@ -171,9 +119,13 @@ func (c *DataDNAContract) RegisterTransformation(
 	toVersionID string,
 	transformationType string,
 	parameters string,
-	actor string,
 	timestamp string,
 ) error {
+	actor, err := callerMSP(ctx)
+	if err != nil {
+		return err
+	}
+
 	key, err := ctx.GetStub().CreateCompositeKey("transformation", []string{datasetID, toVersionID})
 	if err != nil {
 		return fmt.Errorf("failed to create composite key: %v", err)
@@ -216,7 +168,7 @@ type TrainingRun struct {
 	ModelID         string `json:"modelId"`
 	ModelVersion    string `json:"modelVersion"`
 	Hyperparameters string `json:"hyperparameters"` // JSON-encoded, stored as string
-	Actor           string `json:"actor"`
+	Actor           string `json:"actor"`           // MSP ID taken from the caller certificate
 	Timestamp       string `json:"timestamp"`
 }
 
@@ -230,9 +182,13 @@ func (c *DataDNAContract) RegisterTrainingRun(
 	modelID string,
 	modelVersion string,
 	hyperparameters string,
-	actor string,
 	timestamp string,
 ) error {
+	actor, err := callerMSP(ctx)
+	if err != nil {
+		return err
+	}
+
 	key, err := ctx.GetStub().CreateCompositeKey("trainingRun", []string{trainingRunID})
 	if err != nil {
 		return fmt.Errorf("failed to create composite key: %v", err)
@@ -295,299 +251,6 @@ func (c *DataDNAContract) VerifyIntegrity(
 	}
 
 	return dv.Fingerprint == fingerprintToCheck, nil
-}
-
-// DatasetToken represents a mintable, transferable digital asset ("NFT") tied
-// to a specific, already-registered dataset version. Unlike DatasetVersion's
-// OwnerOrg (which tracks provenance/control of the version itself), a
-// DatasetToken is a distinct minted asset with its own ID — the classic NFT
-// pattern of a unique token pointing at an underlying asset.
-type DatasetToken struct {
-	DocType   string `json:"docType"` // "datasetToken" - used to distinguish record types in the ledger
-	TokenID   string `json:"tokenId"`
-	DatasetID string `json:"datasetId"`
-	VersionID string `json:"versionId"`
-	Owner     string `json:"owner"` // current owner org of this token
-	MintedBy  string `json:"mintedBy"`
-	Timestamp string `json:"timestamp"` // RFC3339 string, set by caller for determinism
-}
-
-// MintDatasetToken creates a new DatasetToken for an already-registered
-// dataset version. It fails if the underlying dataset version does not exist
-// on-chain (a token must point at a real asset), or if a token for this
-// tokenID has already been minted (mint-once, mirrors the immutability
-// guarantee used by RegisterDatasetVersion).
-func (c *DataDNAContract) MintDatasetToken(
-	ctx contractapi.TransactionContextInterface,
-	tokenID string,
-	datasetID string,
-	versionID string,
-	owner string,
-	mintedBy string,
-	timestamp string,
-) error {
-	versionKey, err := ctx.GetStub().CreateCompositeKey("datasetVersion", []string{datasetID, versionID})
-	if err != nil {
-		return fmt.Errorf("failed to create composite key: %v", err)
-	}
-
-	versionExisting, err := ctx.GetStub().GetState(versionKey)
-	if err != nil {
-		return fmt.Errorf("failed to read ledger: %v", err)
-	}
-	if versionExisting == nil {
-		return fmt.Errorf("cannot mint token: dataset version %s/%s not found on-chain", datasetID, versionID)
-	}
-
-	tokenKey, err := ctx.GetStub().CreateCompositeKey("datasetToken", []string{tokenID})
-	if err != nil {
-		return fmt.Errorf("failed to create composite key: %v", err)
-	}
-
-	tokenExisting, err := ctx.GetStub().GetState(tokenKey)
-	if err != nil {
-		return fmt.Errorf("failed to read ledger: %v", err)
-	}
-	if tokenExisting != nil {
-		return fmt.Errorf("token %s already minted on-chain (immutable)", tokenID)
-	}
-
-	dt := DatasetToken{
-		DocType:   "datasetToken",
-		TokenID:   tokenID,
-		DatasetID: datasetID,
-		VersionID: versionID,
-		Owner:     owner,
-		MintedBy:  mintedBy,
-		Timestamp: timestamp,
-	}
-
-	dtBytes, err := json.Marshal(dt)
-	if err != nil {
-		return fmt.Errorf("failed to marshal dataset token: %v", err)
-	}
-
-	return ctx.GetStub().PutState(tokenKey, dtBytes)
-}
-
-// TransferToken changes the Owner of an existing DatasetToken, but only if
-// callerOrg matches the CURRENT recorded owner. Mirrors the guard pattern
-// used by TransferDatasetOwnership.
-func (c *DataDNAContract) TransferToken(
-	ctx contractapi.TransactionContextInterface,
-	tokenID string,
-	newOwner string,
-	callerOrg string,
-) error {
-	tokenKey, err := ctx.GetStub().CreateCompositeKey("datasetToken", []string{tokenID})
-	if err != nil {
-		return fmt.Errorf("failed to create composite key: %v", err)
-	}
-
-	existing, err := ctx.GetStub().GetState(tokenKey)
-	if err != nil {
-		return fmt.Errorf("failed to read ledger: %v", err)
-	}
-	if existing == nil {
-		return fmt.Errorf("token %s not found on-chain", tokenID)
-	}
-
-	var dt DatasetToken
-	if err := json.Unmarshal(existing, &dt); err != nil {
-		return fmt.Errorf("failed to unmarshal dataset token: %v", err)
-	}
-
-	if dt.Owner != callerOrg {
-		return fmt.Errorf(
-			"transfer rejected: %s is not the current owner of token %s (current owner: %s)",
-			callerOrg, tokenID, dt.Owner,
-		)
-	}
-
-	dt.Owner = newOwner
-
-	dtBytes, err := json.Marshal(dt)
-	if err != nil {
-		return fmt.Errorf("failed to marshal dataset token: %v", err)
-	}
-
-	return ctx.GetStub().PutState(tokenKey, dtBytes)
-}
-
-// GetTokenOwner returns the current Owner for a given token. Read-only query,
-// mirrors the pattern used by GetDatasetOwner.
-func (c *DataDNAContract) GetTokenOwner(
-	ctx contractapi.TransactionContextInterface,
-	tokenID string,
-) (string, error) {
-	tokenKey, err := ctx.GetStub().CreateCompositeKey("datasetToken", []string{tokenID})
-	if err != nil {
-		return "", fmt.Errorf("failed to create composite key: %v", err)
-	}
-
-	existing, err := ctx.GetStub().GetState(tokenKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to read ledger: %v", err)
-	}
-	if existing == nil {
-		return "", fmt.Errorf("token %s not found on-chain", tokenID)
-	}
-
-	var dt DatasetToken
-	if err := json.Unmarshal(existing, &dt); err != nil {
-		return "", fmt.Errorf("failed to unmarshal dataset token: %v", err)
-	}
-
-	return dt.Owner, nil
-}
-
-// StakeBalance represents tokens an org has put up as collateral when
-// registering a dataset version — the cryptocurrency half of the system.
-// If the underlying dataset version is later marked INVALID, this stake
-// can be slashed (see SlashStake). One stake record per (dataset version, staker).
-type StakeBalance struct {
-	DocType   string `json:"docType"` // "stakeBalance" - used to distinguish record types in the ledger
-	DatasetID string `json:"datasetId"`
-	VersionID string `json:"versionId"`
-	StakerOrg string `json:"stakerOrg"`
-	Amount    int    `json:"amount"`
-	Slashed   bool   `json:"slashed"`
-	Timestamp string `json:"timestamp"` // RFC3339 string, set by caller for determinism
-}
-
-// StakeTokens records a new stake of `amount` tokens by stakerOrg against an
-// already-registered dataset version. It fails if the underlying dataset
-// version does not exist on-chain (mirrors MintDatasetToken's guard), if
-// amount is not positive, or if this org has already staked on this version
-// (mint-once, mirrors the immutability guarantee used elsewhere).
-func (c *DataDNAContract) StakeTokens(
-	ctx contractapi.TransactionContextInterface,
-	datasetID string,
-	versionID string,
-	stakerOrg string,
-	amount int,
-	timestamp string,
-) error {
-	if amount <= 0 {
-		return fmt.Errorf("stake amount must be positive, got %d", amount)
-	}
-
-	versionKey, err := ctx.GetStub().CreateCompositeKey("datasetVersion", []string{datasetID, versionID})
-	if err != nil {
-		return fmt.Errorf("failed to create composite key: %v", err)
-	}
-
-	versionExisting, err := ctx.GetStub().GetState(versionKey)
-	if err != nil {
-		return fmt.Errorf("failed to read ledger: %v", err)
-	}
-	if versionExisting == nil {
-		return fmt.Errorf("cannot stake: dataset version %s/%s not found on-chain", datasetID, versionID)
-	}
-
-	stakeKey, err := ctx.GetStub().CreateCompositeKey("stakeBalance", []string{datasetID, versionID, stakerOrg})
-	if err != nil {
-		return fmt.Errorf("failed to create composite key: %v", err)
-	}
-
-	stakeExisting, err := ctx.GetStub().GetState(stakeKey)
-	if err != nil {
-		return fmt.Errorf("failed to read ledger: %v", err)
-	}
-	if stakeExisting != nil {
-		return fmt.Errorf("%s has already staked on dataset version %s/%s", stakerOrg, datasetID, versionID)
-	}
-
-	sb := StakeBalance{
-		DocType:   "stakeBalance",
-		DatasetID: datasetID,
-		VersionID: versionID,
-		StakerOrg: stakerOrg,
-		Amount:    amount,
-		Slashed:   false,
-		Timestamp: timestamp,
-	}
-
-	sbBytes, err := json.Marshal(sb)
-	if err != nil {
-		return fmt.Errorf("failed to marshal stake balance: %v", err)
-	}
-
-	return ctx.GetStub().PutState(stakeKey, sbBytes)
-}
-
-// SlashStake penalizes an existing stake by marking it Slashed and zeroing
-// its Amount, typically called when a dataset version is found INVALID.
-// It fails if no stake exists for this (datasetID, versionID, stakerOrg),
-// or if that stake has already been slashed (cannot slash twice).
-func (c *DataDNAContract) SlashStake(
-	ctx contractapi.TransactionContextInterface,
-	datasetID string,
-	versionID string,
-	stakerOrg string,
-) error {
-	stakeKey, err := ctx.GetStub().CreateCompositeKey("stakeBalance", []string{datasetID, versionID, stakerOrg})
-	if err != nil {
-		return fmt.Errorf("failed to create composite key: %v", err)
-	}
-
-	existing, err := ctx.GetStub().GetState(stakeKey)
-	if err != nil {
-		return fmt.Errorf("failed to read ledger: %v", err)
-	}
-	if existing == nil {
-		return fmt.Errorf("no stake found for %s on dataset version %s/%s", stakerOrg, datasetID, versionID)
-	}
-
-	var sb StakeBalance
-	if err := json.Unmarshal(existing, &sb); err != nil {
-		return fmt.Errorf("failed to unmarshal stake balance: %v", err)
-	}
-
-	if sb.Slashed {
-		return fmt.Errorf("stake for %s on dataset version %s/%s has already been slashed", stakerOrg, datasetID, versionID)
-	}
-
-	sb.Slashed = true
-	sb.Amount = 0
-
-	sbBytes, err := json.Marshal(sb)
-	if err != nil {
-		return fmt.Errorf("failed to marshal stake balance: %v", err)
-	}
-
-	return ctx.GetStub().PutState(stakeKey, sbBytes)
-}
-
-
-// GetStakeBalance returns the current StakeBalance for a given
-// (datasetID, versionID, stakerOrg). Read-only query, mirrors the pattern
-// used by GetTokenOwner and GetDatasetOwner.
-func (c *DataDNAContract) GetStakeBalance(
-	ctx contractapi.TransactionContextInterface,
-	datasetID string,
-	versionID string,
-	stakerOrg string,
-) (*StakeBalance, error) {
-	stakeKey, err := ctx.GetStub().CreateCompositeKey("stakeBalance", []string{datasetID, versionID, stakerOrg})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create composite key: %v", err)
-	}
-
-	existing, err := ctx.GetStub().GetState(stakeKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read ledger: %v", err)
-	}
-	if existing == nil {
-		return nil, fmt.Errorf("no stake found for %s on dataset version %s/%s", stakerOrg, datasetID, versionID)
-	}
-
-	var sb StakeBalance
-	if err := json.Unmarshal(existing, &sb); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal stake balance: %v", err)
-	}
-
-	return &sb, nil
 }
 
 // GetDatasetVersionHistory returns all dataset version records for a given

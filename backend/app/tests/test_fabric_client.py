@@ -17,7 +17,7 @@ def _mock_result(returncode=0, stdout="", stderr=""):
 @patch("app.core.fabric_client.subprocess.run")
 def test_invoke_success_returns_output(mock_run):
     mock_run.return_value = _mock_result(returncode=0, stdout="", stderr="Chaincode invoke successful. result: status:200")
-    result = invoke("RegisterDatasetVersion", ["a", "1", "", "fp", "", "actor", "ts"])
+    result = invoke("RegisterDatasetVersion", ["a", "1", "", "fp", "", "ts"])
     assert "status:200" in result
 
 
@@ -25,7 +25,7 @@ def test_invoke_success_returns_output(mock_run):
 def test_invoke_failure_raises_fabric_error(mock_run):
     mock_run.return_value = _mock_result(returncode=1, stderr="connection refused")
     with pytest.raises(FabricError, match="connection refused"):
-        invoke("RegisterDatasetVersion", ["a", "1", "", "fp", "", "actor", "ts"])
+        invoke("RegisterDatasetVersion", ["a", "1", "", "fp", "", "ts"])
 
 
 @patch("app.core.fabric_client.subprocess.run")

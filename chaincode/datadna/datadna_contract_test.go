@@ -1,16 +1,40 @@
 package main
 
 import (
+	"crypto/x509"
+	"encoding/json"
+	"fmt"
+	"reflect"
 	"testing"
 
 	"datadna/mocks"
 
+	"github.com/hyperledger/fabric-chaincode-go/v2/pkg/cid"
 	"github.com/hyperledger/fabric-chaincode-go/v2/shim"
+	"github.com/hyperledger/fabric-contract-api-go/v2/contractapi"
 	"github.com/hyperledger/fabric-protos-go-apiv2/ledger/queryresult"
 	"github.com/stretchr/testify/require"
 )
 
-func newMockContext() (*mocks.TransactionContext, *mocks.ChaincodeStub) {
+// fakeIdentity is a minimal cid.ClientIdentity for tests.
+type fakeIdentity struct {
+	msp    string
+	mspErr error
+}
+
+func (f fakeIdentity) GetID() (string, error)    { return "fake-id", nil }
+func (f fakeIdentity) GetMSPID() (string, error) { return f.msp, f.mspErr }
+func (f fakeIdentity) GetAttributeValue(attrName string) (string, bool, error) {
+	return "", false, nil
+}
+func (f fakeIdentity) AssertAttributeValue(attrName, attrValue string) error { return nil }
+func (f fakeIdentity) GetX509Certificate() (*x509.Certificate, error)        { return nil, nil }
+
+var _ cid.ClientIdentity = fakeIdentity{}
+
+// newMockContextWith builds a mock context whose caller identity is `identity`
+// (nil means "no identity available").
+func newMockContextWith(identity cid.ClientIdentity) (*mocks.TransactionContext, *mocks.ChaincodeStub) {
 	stub := &mocks.ChaincodeStub{}
 	ledger := map[string][]byte{}
 
@@ -33,23 +57,24 @@ func newMockContext() (*mocks.TransactionContext, *mocks.ChaincodeStub) {
 
 	ctx := &mocks.TransactionContext{}
 	ctx.GetStubReturns(stub)
+	ctx.GetClientIdentityReturns(identity)
 
 	return ctx, stub
 }
+
+// newMockContext is the default: caller is a valid Org1MSP member.
+func newMockContext() (*mocks.TransactionContext, *mocks.ChaincodeStub) {
+	return newMockContextWith(fakeIdentity{msp: "Org1MSP"})
+}
+
+// --- RegisterDatasetVersion ---
 
 func TestRegisterDatasetVersion_Success(t *testing.T) {
 	contract := &DataDNAContract{}
 	ctx, _ := newMockContext()
 
 	err := contract.RegisterDatasetVersion(
-		ctx,
-		"cropdisease",
-		"v1",
-		"",
-		"fingerprint-abc123",
-		"merkleroot-xyz789",
-		"dhruv",
-		"2026-08-13T18:00:00Z",
+		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "2026-08-13T18:00:00Z",
 	)
 
 	require.NoError(t, err, "first registration should succeed")
@@ -60,29 +85,86 @@ func TestRegisterDatasetVersion_DuplicateRejected(t *testing.T) {
 	ctx, _ := newMockContext()
 
 	err1 := contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "dhruv", "2026-08-13T18:00:00Z",
+		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "2026-08-13T18:00:00Z",
 	)
 	require.NoError(t, err1, "first registration should succeed")
 
 	err2 := contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-DIFFERENT", "merkleroot-DIFFERENT", "attacker", "2026-08-13T19:00:00Z",
+		ctx, "cropdisease", "v1", "", "fingerprint-DIFFERENT", "merkleroot-DIFFERENT", "2026-08-13T19:00:00Z",
 	)
 	require.Error(t, err2, "duplicate registration must be rejected (immutability)")
 }
+
+func TestRegisterDatasetVersion_ActorComesFromCallerMSP(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, stub := newMockContextWith(fakeIdentity{msp: "Org2MSP"})
+
+	require.NoError(t, contract.RegisterDatasetVersion(
+		ctx, "cropdisease", "v1", "", "fp-v1", "root-v1", "2026-08-13T18:00:00Z",
+	))
+
+	stub.GetStateByPartialCompositeKeyStub = func(objType string, attrs []string) (shim.StateQueryIteratorInterface, error) {
+		return newMockIterator(stub, objType, attrs), nil
+	}
+	versions, err := contract.GetDatasetVersionHistory(ctx, "cropdisease")
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+	require.Equal(t, "Org2MSP", versions[0].Actor, "actor must be the MSP from the certificate")
+}
+
+func TestRegisterDatasetVersion_DifferentOrgsGetTheirOwnActor(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx1, stub1 := newMockContextWith(fakeIdentity{msp: "Org1MSP"})
+	require.NoError(t, contract.RegisterDatasetVersion(ctx1, "ds", "1", "", "fp1", "", "t1"))
+
+	var stored DatasetVersion
+	_, raw := stub1.PutStateArgsForCall(0)
+	require.NoError(t, json.Unmarshal(raw, &stored))
+	require.Equal(t, "Org1MSP", stored.Actor)
+
+	ctx2, stub2 := newMockContextWith(fakeIdentity{msp: "Org2MSP"})
+	require.NoError(t, contract.RegisterDatasetVersion(ctx2, "ds", "1", "", "fp1", "", "t1"))
+	_, raw2 := stub2.PutStateArgsForCall(0)
+	require.NoError(t, json.Unmarshal(raw2, &stored))
+	require.Equal(t, "Org2MSP", stored.Actor)
+}
+
+func TestRegisterDatasetVersion_NoIdentityRejectedAndNothingWritten(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, stub := newMockContextWith(nil)
+
+	err := contract.RegisterDatasetVersion(ctx, "ds", "1", "", "fp", "", "t")
+	require.Error(t, err, "a write without a client identity must be rejected")
+	require.Equal(t, 0, stub.PutStateCallCount(), "nothing may be written")
+}
+
+func TestRegisterDatasetVersion_EmptyMSPRejected(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, stub := newMockContextWith(fakeIdentity{msp: ""})
+
+	err := contract.RegisterDatasetVersion(ctx, "ds", "1", "", "fp", "", "t")
+	require.Error(t, err)
+	require.Equal(t, 0, stub.PutStateCallCount())
+}
+
+func TestRegisterDatasetVersion_MSPLookupErrorRejected(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, stub := newMockContextWith(fakeIdentity{mspErr: fmt.Errorf("bad certificate")})
+
+	err := contract.RegisterDatasetVersion(ctx, "ds", "1", "", "fp", "", "t")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "bad certificate")
+	require.Equal(t, 0, stub.PutStateCallCount())
+}
+
+// --- RegisterTransformation ---
 
 func TestRegisterTransformation_Success(t *testing.T) {
 	contract := &DataDNAContract{}
 	ctx, _ := newMockContext()
 
 	err := contract.RegisterTransformation(
-		ctx,
-		"cropdisease",
-		"v1",
-		"v2",
-		"remove_duplicates",
-		`{"threshold":0.95}`,
-		"dhruv",
-		"2026-08-13T18:30:00Z",
+		ctx, "cropdisease", "v1", "v2", "remove_duplicates", `{"threshold":0.95}`, "2026-08-13T18:30:00Z",
 	)
 
 	require.NoError(t, err, "transformation registration should succeed")
@@ -93,30 +175,44 @@ func TestRegisterTransformation_DuplicateRejected(t *testing.T) {
 	ctx, _ := newMockContext()
 
 	err1 := contract.RegisterTransformation(
-		ctx, "cropdisease", "v1", "v2", "remove_duplicates", `{"threshold":0.95}`, "dhruv", "2026-08-13T18:30:00Z",
+		ctx, "cropdisease", "v1", "v2", "remove_duplicates", `{"threshold":0.95}`, "2026-08-13T18:30:00Z",
 	)
 	require.NoError(t, err1)
 
 	err2 := contract.RegisterTransformation(
-		ctx, "cropdisease", "v1", "v2", "normalize", `{}`, "attacker", "2026-08-13T19:00:00Z",
+		ctx, "cropdisease", "v1", "v2", "normalize", `{}`, "2026-08-13T19:00:00Z",
 	)
 	require.Error(t, err2, "duplicate transformation for the same target version must be rejected")
 }
+
+func TestRegisterTransformation_ActorComesFromCallerMSP(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, stub := newMockContextWith(fakeIdentity{msp: "Org2MSP"})
+
+	require.NoError(t, contract.RegisterTransformation(ctx, "ds", "1", "2", "normalize", "{}", "t"))
+
+	var stored Transformation
+	_, raw := stub.PutStateArgsForCall(0)
+	require.NoError(t, json.Unmarshal(raw, &stored))
+	require.Equal(t, "Org2MSP", stored.Actor)
+}
+
+func TestRegisterTransformation_NoIdentityRejected(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, stub := newMockContextWith(nil)
+
+	require.Error(t, contract.RegisterTransformation(ctx, "ds", "1", "2", "normalize", "{}", "t"))
+	require.Equal(t, 0, stub.PutStateCallCount())
+}
+
+// --- RegisterTrainingRun ---
 
 func TestRegisterTrainingRun_Success(t *testing.T) {
 	contract := &DataDNAContract{}
 	ctx, _ := newMockContext()
 
 	err := contract.RegisterTrainingRun(
-		ctx,
-		"run-12",
-		"cropdisease",
-		"v3",
-		"model-cropnet",
-		"v4",
-		`{"epochs":50,"lr":0.001}`,
-		"dhruv",
-		"2026-08-13T20:00:00Z",
+		ctx, "run-12", "cropdisease", "v3", "model-cropnet", "v4", `{"epochs":50,"lr":0.001}`, "2026-08-13T20:00:00Z",
 	)
 
 	require.NoError(t, err, "training run registration should succeed")
@@ -127,22 +223,44 @@ func TestRegisterTrainingRun_DuplicateRejected(t *testing.T) {
 	ctx, _ := newMockContext()
 
 	err1 := contract.RegisterTrainingRun(
-		ctx, "run-12", "cropdisease", "v3", "model-cropnet", "v4", `{"epochs":50}`, "dhruv", "2026-08-13T20:00:00Z",
+		ctx, "run-12", "cropdisease", "v3", "model-cropnet", "v4", `{"epochs":50}`, "2026-08-13T20:00:00Z",
 	)
 	require.NoError(t, err1)
 
 	err2 := contract.RegisterTrainingRun(
-		ctx, "run-12", "cropdisease", "v3", "model-cropnet", "v5", `{"epochs":100}`, "attacker", "2026-08-13T21:00:00Z",
+		ctx, "run-12", "cropdisease", "v3", "model-cropnet", "v5", `{"epochs":100}`, "2026-08-13T21:00:00Z",
 	)
 	require.Error(t, err2, "duplicate training run ID must be rejected")
 }
+
+func TestRegisterTrainingRun_ActorComesFromCallerMSP(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, stub := newMockContextWith(fakeIdentity{msp: "Org2MSP"})
+
+	require.NoError(t, contract.RegisterTrainingRun(ctx, "run-1", "ds", "1", "m", "1", "{}", "t"))
+
+	var stored TrainingRun
+	_, raw := stub.PutStateArgsForCall(0)
+	require.NoError(t, json.Unmarshal(raw, &stored))
+	require.Equal(t, "Org2MSP", stored.Actor)
+}
+
+func TestRegisterTrainingRun_NoIdentityRejected(t *testing.T) {
+	contract := &DataDNAContract{}
+	ctx, stub := newMockContextWith(nil)
+
+	require.Error(t, contract.RegisterTrainingRun(ctx, "run-1", "ds", "1", "m", "1", "{}", "t"))
+	require.Equal(t, 0, stub.PutStateCallCount())
+}
+
+// --- VerifyIntegrity (read-only, needs no identity) ---
 
 func TestVerifyIntegrity_Match(t *testing.T) {
 	contract := &DataDNAContract{}
 	ctx, _ := newMockContext()
 
 	err := contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "dhruv", "2026-08-13T18:00:00Z",
+		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "2026-08-13T18:00:00Z",
 	)
 	require.NoError(t, err)
 
@@ -156,7 +274,7 @@ func TestVerifyIntegrity_Mismatch(t *testing.T) {
 	ctx, _ := newMockContext()
 
 	err := contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "dhruv", "2026-08-13T18:00:00Z",
+		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "2026-08-13T18:00:00Z",
 	)
 	require.NoError(t, err)
 
@@ -173,19 +291,34 @@ func TestVerifyIntegrity_NotFound(t *testing.T) {
 	require.Error(t, err, "verifying a non-existent version must return an error")
 }
 
+func TestVerifyIntegrity_WorksWithoutIdentity(t *testing.T) {
+	contract := &DataDNAContract{}
+	writeCtx, _ := newMockContext()
+	require.NoError(t, contract.RegisterDatasetVersion(writeCtx, "ds", "1", "", "fp", "", "t"))
+
+	// Same ledger is not shared between mock contexts, so verify on the same one
+	// but with the identity removed.
+	writeCtx.GetClientIdentityReturns(nil)
+	ok, err := contract.VerifyIntegrity(writeCtx, "ds", "1", "fp")
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
+// --- GetDatasetVersionHistory ---
+
 func TestGetDatasetVersionHistory_ReturnsAllVersions(t *testing.T) {
 	contract := &DataDNAContract{}
 	ctx, stub := newMockContext()
 
 	// Register 3 versions of the same dataset
 	require.NoError(t, contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fp-v1", "root-v1", "dhruv", "2026-08-13T18:00:00Z",
+		ctx, "cropdisease", "v1", "", "fp-v1", "root-v1", "2026-08-13T18:00:00Z",
 	))
 	require.NoError(t, contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v2", "v1", "fp-v2", "root-v2", "dhruv", "2026-08-13T18:10:00Z",
+		ctx, "cropdisease", "v2", "v1", "fp-v2", "root-v2", "2026-08-13T18:10:00Z",
 	))
 	require.NoError(t, contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v3", "v2", "fp-v3", "root-v3", "dhruv", "2026-08-13T18:20:00Z",
+		ctx, "cropdisease", "v3", "v2", "fp-v3", "root-v3", "2026-08-13T18:20:00Z",
 	))
 
 	// Wire GetStateByPartialCompositeKey to scan the same in-memory ledger
@@ -212,140 +345,25 @@ func TestGetDatasetVersionHistory_EmptyForUnknownDataset(t *testing.T) {
 	require.Len(t, versions, 0, "unknown dataset should return empty list, not an error")
 }
 
-func TestTransferDatasetOwnership_Success(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
+// --- the contract must load the way the peer loads it ---
 
-	// Org1 registers the dataset — Org1 becomes the initial owner (actor == owner).
-	err := contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
-	)
-	require.NoError(t, err)
-
-	// Org1 (the real owner) transfers ownership to Org2.
-	err = contract.TransferDatasetOwnership(ctx, "cropdisease", "v1", "Org2MSP", "Org1MSP")
-	require.NoError(t, err, "transfer by the real current owner should succeed")
-
-	owner, err := contract.GetDatasetOwner(ctx, "cropdisease", "v1")
-	require.NoError(t, err)
-	require.Equal(t, "Org2MSP", owner, "owner should now be Org2MSP after transfer")
+func TestContractLoadsAsChaincode(t *testing.T) {
+	cc, err := contractapi.NewChaincode(&DataDNAContract{})
+	require.NoError(t, err, "contract signatures must be valid for the Fabric contract API")
+	require.NotNil(t, cc)
 }
 
-func TestTransferDatasetOwnership_RejectedIfNotOwner(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
+// --- removed features must stay removed ---
 
-	// Org1 registers the dataset — Org1 becomes the initial owner.
-	err := contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
-	)
-	require.NoError(t, err)
-
-	// Org2 (NOT the owner) tries to transfer it to itself — must be rejected.
-	err = contract.TransferDatasetOwnership(ctx, "cropdisease", "v1", "Org2MSP", "Org2MSP")
-	require.Error(t, err, "transfer attempted by a non-owner must be rejected")
-
-	// Ownership must remain unchanged (still Org1MSP).
-	owner, getErr := contract.GetDatasetOwner(ctx, "cropdisease", "v1")
-	require.NoError(t, getErr)
-	require.Equal(t, "Org1MSP", owner, "ownership must NOT change after a rejected transfer")
-}
-
-func TestGetDatasetOwner_NotFound(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-
-	_, err := contract.GetDatasetOwner(ctx, "cropdisease", "v99")
-	require.Error(t, err, "looking up the owner of a non-existent version must return an error")
-}
-
-func TestMintDatasetToken_Success(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-
-	// A token can only be minted for a version that already exists on-chain.
-	err := contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
-	)
-	require.NoError(t, err)
-
-	err = contract.MintDatasetToken(ctx, "token-1", "cropdisease", "v1", "Org1MSP", "Org1MSP", "2026-08-13T18:05:00Z")
-	require.NoError(t, err, "minting a token for an existing version should succeed")
-
-	owner, err := contract.GetTokenOwner(ctx, "token-1")
-	require.NoError(t, err)
-	require.Equal(t, "Org1MSP", owner, "minted token should be owned by the given owner")
-}
-
-func TestMintDatasetToken_RejectedIfVersionMissing(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-
-	err := contract.MintDatasetToken(ctx, "token-1", "cropdisease", "v99", "Org1MSP", "Org1MSP", "2026-08-13T18:05:00Z")
-	require.Error(t, err, "minting a token for a non-existent dataset version must be rejected")
-}
-
-func TestMintDatasetToken_DuplicateRejected(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-
-	err := contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
-	)
-	require.NoError(t, err)
-
-	err1 := contract.MintDatasetToken(ctx, "token-1", "cropdisease", "v1", "Org1MSP", "Org1MSP", "2026-08-13T18:05:00Z")
-	require.NoError(t, err1)
-
-	err2 := contract.MintDatasetToken(ctx, "token-1", "cropdisease", "v1", "Org2MSP", "attacker", "2026-08-13T19:00:00Z")
-	require.Error(t, err2, "minting the same tokenID twice must be rejected (mint-once)")
-}
-
-func TestTransferToken_Success(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-
-	require.NoError(t, contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
-	))
-	require.NoError(t, contract.MintDatasetToken(
-		ctx, "token-1", "cropdisease", "v1", "Org1MSP", "Org1MSP", "2026-08-13T18:05:00Z",
-	))
-
-	err := contract.TransferToken(ctx, "token-1", "Org2MSP", "Org1MSP")
-	require.NoError(t, err, "transfer by the real current owner should succeed")
-
-	owner, err := contract.GetTokenOwner(ctx, "token-1")
-	require.NoError(t, err)
-	require.Equal(t, "Org2MSP", owner, "owner should now be Org2MSP after transfer")
-}
-
-func TestTransferToken_RejectedIfNotOwner(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-
-	require.NoError(t, contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
-	))
-	require.NoError(t, contract.MintDatasetToken(
-		ctx, "token-1", "cropdisease", "v1", "Org1MSP", "Org1MSP", "2026-08-13T18:05:00Z",
-	))
-
-	// Org2 (NOT the owner) tries to transfer it to itself — must be rejected.
-	err := contract.TransferToken(ctx, "token-1", "Org2MSP", "Org2MSP")
-	require.Error(t, err, "transfer attempted by a non-owner must be rejected")
-
-	owner, getErr := contract.GetTokenOwner(ctx, "token-1")
-	require.NoError(t, getErr)
-	require.Equal(t, "Org1MSP", owner, "ownership must NOT change after a rejected transfer")
-}
-
-func TestGetTokenOwner_NotFound(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-
-	_, err := contract.GetTokenOwner(ctx, "token-does-not-exist")
-	require.Error(t, err, "looking up the owner of a non-existent token must return an error")
+func TestDeadFeaturesAreGone(t *testing.T) {
+	var c interface{} = &DataDNAContract{}
+	for _, name := range []string{
+		"TransferDatasetOwnership", "GetDatasetOwner", "MintDatasetToken",
+		"TransferToken", "GetTokenOwner", "StakeTokens", "SlashStake", "GetStakeBalance",
+	} {
+		found := reflect.ValueOf(c).MethodByName(name).IsValid()
+		require.False(t, found, "%s must not exist any more", name)
+	}
 }
 
 // newMockIterator builds a mocks.StateQueryIterator backed by a static snapshot
@@ -387,78 +405,4 @@ func newMockIterator(stub *mocks.ChaincodeStub, objType string, attrs []string) 
 	}
 
 	return iter
-}
-
-func TestStakeTokens_Success(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-	require.NoError(t, contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
-	))
-	err := contract.StakeTokens(ctx, "cropdisease", "v1", "Org1MSP", 100, "2026-08-13T18:05:00Z")
-	require.NoError(t, err, "staking against an existing dataset version should succeed")
-	sb, err := contract.GetStakeBalance(ctx, "cropdisease", "v1", "Org1MSP")
-	require.NoError(t, err)
-	require.Equal(t, 100, sb.Amount, "stake amount should match what was staked")
-	require.False(t, sb.Slashed, "a fresh stake should not be slashed")
-}
-
-func TestStakeTokens_RejectedIfVersionMissing(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-	err := contract.StakeTokens(ctx, "cropdisease", "v99", "Org1MSP", 100, "2026-08-13T18:05:00Z")
-	require.Error(t, err, "staking against a non-existent dataset version must be rejected")
-}
-
-func TestStakeTokens_DuplicateRejected(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-	require.NoError(t, contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
-	))
-	err1 := contract.StakeTokens(ctx, "cropdisease", "v1", "Org1MSP", 100, "2026-08-13T18:05:00Z")
-	require.NoError(t, err1)
-	err2 := contract.StakeTokens(ctx, "cropdisease", "v1", "Org1MSP", 50, "2026-08-13T19:00:00Z")
-	require.Error(t, err2, "staking twice by the same org on the same version must be rejected")
-}
-
-func TestSlashStake_Success(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-	require.NoError(t, contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
-	))
-	require.NoError(t, contract.StakeTokens(ctx, "cropdisease", "v1", "Org1MSP", 100, "2026-08-13T18:05:00Z"))
-	err := contract.SlashStake(ctx, "cropdisease", "v1", "Org1MSP")
-	require.NoError(t, err, "slashing an existing, unslashed stake should succeed")
-	sb, getErr := contract.GetStakeBalance(ctx, "cropdisease", "v1", "Org1MSP")
-	require.NoError(t, getErr)
-	require.True(t, sb.Slashed, "stake should be marked Slashed after SlashStake")
-	require.Equal(t, 0, sb.Amount, "stake amount should be zeroed after slashing")
-}
-
-func TestSlashStake_RejectedIfAlreadySlashed(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-	require.NoError(t, contract.RegisterDatasetVersion(
-		ctx, "cropdisease", "v1", "", "fingerprint-abc123", "merkleroot-xyz789", "Org1MSP", "2026-08-13T18:00:00Z",
-	))
-	require.NoError(t, contract.StakeTokens(ctx, "cropdisease", "v1", "Org1MSP", 100, "2026-08-13T18:05:00Z"))
-	require.NoError(t, contract.SlashStake(ctx, "cropdisease", "v1", "Org1MSP"))
-	err := contract.SlashStake(ctx, "cropdisease", "v1", "Org1MSP")
-	require.Error(t, err, "slashing an already-slashed stake must be rejected (cannot slash twice)")
-}
-
-func TestSlashStake_RejectedIfNotFound(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-	err := contract.SlashStake(ctx, "cropdisease", "v1", "Org1MSP")
-	require.Error(t, err, "slashing a stake that does not exist must be rejected")
-}
-
-func TestGetStakeBalance_NotFound(t *testing.T) {
-	contract := &DataDNAContract{}
-	ctx, _ := newMockContext()
-	_, err := contract.GetStakeBalance(ctx, "cropdisease", "v1", "Org1MSP")
-	require.Error(t, err, "querying a stake balance that does not exist must return an error")
 }
