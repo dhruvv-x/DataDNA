@@ -36,47 +36,75 @@ def create_version(dataset_id: str, records: list, parent_version_id: str = None
     """
     Create a new immutable dataset version from a list of records (dicts).
     Records must already be in row_index order.
+
+    Rules (raise ValueError):
+    - dataset_id must exist.
+    - parent_version_id, if given, must exist AND belong to the same dataset.
+    - parent_version_id is required once a dataset already has versions
+      (no second root).
+    version_number = highest number in this dataset + 1, so branching from an
+    older version never reuses a number.
     """
     conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
 
-    version_number = 1
-    if parent_version_id:
-        row = conn.execute(
-            "SELECT version_number FROM dataset_versions WHERE version_id = ?",
-            (parent_version_id,),
-        ).fetchone()
-        if row is None:
-            conn.close()
-            raise ValueError("parent_version_id not found")
-        version_number = row["version_number"] + 1
+        if conn.execute(
+            "SELECT 1 FROM datasets WHERE dataset_id = ?", (dataset_id,)
+        ).fetchone() is None:
+            raise ValueError("dataset_id not found")
 
-    fp_result = fingerprint_dataset(records)
-    version_id = str(uuid.uuid4())
-    schema_fp = _schema_fingerprint(records)
+        if parent_version_id:
+            parent = conn.execute(
+                "SELECT dataset_id FROM dataset_versions WHERE version_id = ?",
+                (parent_version_id,),
+            ).fetchone()
+            if parent is None:
+                raise ValueError("parent_version_id not found")
+            if parent["dataset_id"] != dataset_id:
+                raise ValueError("parent_version_id belongs to a different dataset")
+        elif conn.execute(
+            "SELECT 1 FROM dataset_versions WHERE dataset_id = ? LIMIT 1", (dataset_id,)
+        ).fetchone() is not None:
+            raise ValueError("dataset already has versions; parent_version_id is required")
 
-    conn.execute(
-        """INSERT INTO dataset_versions
-           (version_id, dataset_id, parent_version_id, version_number,
-            schema_fingerprint, dataset_fingerprint, record_count,
-            created_at, integrity_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            version_id, dataset_id, parent_version_id, version_number,
-            schema_fp, fp_result["dataset_fingerprint"], len(records),
-            datetime.now(timezone.utc).isoformat(), "VERIFIED",
-        ),
-    )
+        version_number = conn.execute(
+            "SELECT COALESCE(MAX(version_number), 0) + 1 AS n "
+            "FROM dataset_versions WHERE dataset_id = ?",
+            (dataset_id,),
+        ).fetchone()["n"]
 
-    for idx, rec_fp in enumerate(fp_result["record_fingerprints"]):
+        fp_result = fingerprint_dataset(records)
+        version_id = str(uuid.uuid4())
+        schema_fp = _schema_fingerprint(records)
+
         conn.execute(
-            """INSERT INTO records
-               (record_id, dataset_version_id, record_fingerprint, row_index, status)
-               VALUES (?, ?, ?, ?, ?)""",
-            (str(uuid.uuid4()), version_id, rec_fp, idx, "VALID"),
+            """INSERT INTO dataset_versions
+               (version_id, dataset_id, parent_version_id, version_number,
+                schema_fingerprint, dataset_fingerprint, record_count,
+                created_at, integrity_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                version_id, dataset_id, parent_version_id, version_number,
+                schema_fp, fp_result["dataset_fingerprint"], len(records),
+                datetime.now(timezone.utc).isoformat(), "VERIFIED",
+            ),
         )
 
-    conn.commit()
-    conn.close()
+        for idx, rec_fp in enumerate(fp_result["record_fingerprints"]):
+            conn.execute(
+                """INSERT INTO records
+                   (record_id, dataset_version_id, record_fingerprint, row_index, status)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (str(uuid.uuid4()), version_id, rec_fp, idx, "VALID"),
+            )
+
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
     return {
         "version_id": version_id,

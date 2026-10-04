@@ -196,6 +196,23 @@ async def register_onchain(version_id: str, body: RegisterOnChainRequest = Regis
         return {"version_id": version_id, "status": "registered", "fabric_output": result}
     except FabricError as e:
         if "already registered on-chain" in str(e):
+            # Never trust the error text alone: confirm the on-chain fingerprint
+            # really equals ours before marking this version REGISTERED locally.
+            try:
+                matches = query(
+                    "VerifyIntegrity",
+                    [version["dataset_id"], str(version["version_number"]), version["dataset_fingerprint"]],
+                ).strip().lower() == "true"
+            except FabricError as verify_err:
+                raise HTTPException(status_code=502, detail=str(verify_err))
+            if not matches:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "A different fingerprint is already registered on-chain for this "
+                        "dataset/version number; refusing to mark it REGISTERED."
+                    ),
+                )
             mark_registered_onchain(version_id)
             return {
                 "version_id": version_id,

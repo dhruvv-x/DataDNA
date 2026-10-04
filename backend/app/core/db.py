@@ -71,11 +71,26 @@ CREATE TABLE IF NOT EXISTS training_runs (
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    # SQLite ignores FOREIGN KEY clauses unless this is switched on per connection.
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
 def init_db():
     conn = get_connection()
     conn.executescript(SCHEMA)
+    # One version number per dataset. On-chain keys use (dataset_id, version_number),
+    # so duplicates here would collide on the ledger. Wrapped in try/except so an
+    # old dev DB that already contains duplicates still starts (with a warning).
+    try:
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_versions_dataset_number "
+            "ON dataset_versions (dataset_id, version_number)"
+        )
+    except sqlite3.IntegrityError:
+        print(
+            "WARNING: duplicate (dataset_id, version_number) rows exist; "
+            "unique index not created. Clean them up (cleanup_datasets.py)."
+        )
     conn.commit()
     conn.close()

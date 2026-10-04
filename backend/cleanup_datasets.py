@@ -27,6 +27,7 @@ def delete_dataset(dataset_id: str):
     ]
 
     for vid in version_ids:
+        conn.execute("DELETE FROM training_runs WHERE dataset_version_id = ?", (vid,))
         conn.execute("DELETE FROM audit_results WHERE dataset_version_id = ?", (vid,))
         conn.execute("DELETE FROM records WHERE dataset_version_id = ?", (vid,))
 
