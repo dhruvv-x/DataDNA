@@ -11,11 +11,9 @@ echo "=== 3. Detecting WSL IP ==="
 WSL_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
 echo "WSL IP: $WSL_IP"
 
-echo "=== 4. Updating frontend API URLs to current IP ==="
-cd ~/datadna/frontend
-# Replace any existing IP pattern (172.x.x.x:8000) with the current one
-sed -i -E "s|http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:8000|http://${WSL_IP}:8000|g" src/App.tsx
-echo "Frontend now points to: http://${WSL_IP}:8000"
+echo "=== 4. Writing frontend API address to .env.local ==="
+echo "VITE_API_BASE=http://${WSL_IP}:8000" > ~/datadna/frontend/.env.local
+echo "Frontend will use: http://${WSL_IP}:8000 (restart npm run dev if it is already running)"
 
 echo "=== 5. Starting backend (background) ==="
 cd ~/datadna/backend

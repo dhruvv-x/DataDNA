@@ -12,6 +12,9 @@ interface DatasetSummary {
   latest_has_audit: boolean
 }
 
+// Backend address. Set VITE_API_BASE in frontend/.env.local (see .env.example).
+const API_BASE: string = (import.meta.env.VITE_API_BASE || 'http://localhost:8000').replace(/\/+$/, '')
+
 function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [datasetName, setDatasetName] = useState('')
@@ -26,37 +29,6 @@ function App() {
 
     const [fabricResult, setFabricResult] = useState<any>(null)
   const [verifyResult, setVerifyResult] = useState<any>(null)
-  const [ownerResult, setOwnerResult] = useState<any>(null)
-  const [transferTargetOrg, setTransferTargetOrg] = useState<string>('Org2MSP')
-  const [transferResult, setTransferResult] = useState<any>(null)
-
-  // Dataset Token (NFT-equivalent) — a token here represents provable
-  // ownership of one specific dataset version, the same idea as an NFT
-  // representing ownership of a digital item. mintTokenId/mintOwnerOrg feed
-  // the mint form; tokenId is whichever token is currently being tracked for
-  // owner-check/transfer (auto-filled after a successful mint, same as how
-  // versionId drives the dataset-ownership controls above).
-  const [mintTokenId, setMintTokenId] = useState<string>('')
-  const [mintOwnerOrg, setMintOwnerOrg] = useState<string>('Org1MSP')
-  const [mintTokenResult, setMintTokenResult] = useState<any>(null)
-  const [tokenId, setTokenId] = useState<string>(() => localStorage.getItem('datadna-token-id') || '')
-  // Trust Stake (crypto/collateral) — an org stakes tokens against this
-  // dataset version as collateral. If the version is later found INVALID,
-  // the stake can be slashed (amount goes to 0, slashed flag set to true,
-  // record kept not deleted) via a separate manual action, same pattern as
-  // the Dataset Token hooks above. stakeAmount/stakeOrg feed the stake
-  // form; stakeCheckOrg is whichever org's balance is currently being
-  // viewed; slashOrg is whichever org's stake is about to be slashed.
-  const [stakeAmount, setStakeAmount] = useState<string>('')
-  const [stakeOrg, setStakeOrg] = useState<string>('Org1MSP')
-  const [stakeResult, setStakeResult] = useState<any>(null)
-  const [stakeCheckOrg, setStakeCheckOrg] = useState<string>('Org1MSP')
-  const [stakeBalanceResult, setStakeBalanceResult] = useState<any>(null)
-  const [slashOrg, setSlashOrg] = useState<string>('Org1MSP')
-  const [slashResult, setSlashResult] = useState<any>(null)
-  const [tokenOwnerResult, setTokenOwnerResult] = useState<any>(null)
-  const [tokenTransferTargetOrg, setTokenTransferTargetOrg] = useState<string>('Org2MSP')
-  const [tokenTransferResult, setTokenTransferResult] = useState<any>(null)
 
   const [datasetHistory, setDatasetHistory] = useState<DatasetSummary[]>([])
   const [historyError, setHistoryError] = useState('')
@@ -112,26 +84,10 @@ function App() {
     fetchModels()
   }, [])
 
-  // Persist the last-checked token ID so it survives a page refresh —
-  // same idea as the theme setting above.
-  useEffect(() => {
-    if (tokenId) {
-      localStorage.setItem('datadna-token-id', tokenId)
-    }
-  }, [tokenId])
-
-  // On page load, if a token ID was remembered, auto-check its current
-  // owner so the "Current Owner" box isn't empty after a refresh.
-  useEffect(() => {
-    if (tokenId) {
-      handleGetTokenOwner()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   async function fetchDatasetHistory() {
     try {
-      const response = await fetch('http://172.20.34.59:8000/datasets')
+      const response = await fetch(`${API_BASE}/datasets`)
       const data = await response.json()
       setDatasetHistory(data.datasets || [])
       setHistoryError('')
@@ -142,7 +98,7 @@ function App() {
 
   async function fetchModels() {
     try {
-      const response = await fetch('http://172.20.34.59:8000/models')
+      const response = await fetch(`${API_BASE}/models`)
       const data = await response.json()
       setModels(data.models || [])
     } catch (error) {
@@ -171,7 +127,7 @@ function App() {
     setStatus('Registering model...')
 
     try {
-      const response = await fetch('http://172.20.34.59:8000/models', {
+      const response = await fetch(`${API_BASE}/models`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newModelName, version: newModelVersion }),
@@ -206,7 +162,7 @@ function App() {
     setStatus('Registering training run...')
 
     try {
-      const response = await fetch('http://172.20.34.59:8000/training-runs', {
+      const response = await fetch(`${API_BASE}/training-runs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -349,7 +305,7 @@ function App() {
     formData.append('name', datasetName)
 
     try {
-      const uploadResponse = await fetch('http://172.20.34.59:8000/datasets', {
+      const uploadResponse = await fetch(`${API_BASE}/datasets`, {
         method: 'POST',
         body: formData,
       })
@@ -365,7 +321,7 @@ function App() {
       setVersionId(uploadData.version_id)
 
       const trustResponse = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${uploadData.version_id}/trust`
+        `${API_BASE}/datasets/versions/${uploadData.version_id}/trust`
       )
       const trustData = await trustResponse.json()
 
@@ -388,7 +344,7 @@ function App() {
 
     try {
       const trustResponse = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${targetVersionId}/trust`
+        `${API_BASE}/datasets/versions/${targetVersionId}/trust`
       )
       const trustData = await trustResponse.json()
 
@@ -431,7 +387,7 @@ function App() {
 
     try {
       const impactResponse = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/impact`
+        `${API_BASE}/datasets/versions/${versionId}/impact`
       )
       const impactData = await impactResponse.json()
 
@@ -469,7 +425,7 @@ function App() {
 
     try {
       const invalidateResponse = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/invalidate`,
+        `${API_BASE}/datasets/versions/${versionId}/invalidate`,
         { method: 'POST' }
       )
       if (!invalidateResponse.ok) {
@@ -479,7 +435,7 @@ function App() {
       }
 
       const impactResponse = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/impact`
+        `${API_BASE}/datasets/versions/${versionId}/impact`
       )
       const impactData = await impactResponse.json()
 
@@ -521,7 +477,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://172.20.34.59:8000/datasets/${datasetId}/versions`,
+        `${API_BASE}/datasets/${datasetId}/versions`,
         {
           method: 'POST',
           body: formData,
@@ -554,7 +510,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://172.20.34.59:8000/datasets/${datasetId}/lineage`
+        `${API_BASE}/datasets/${datasetId}/lineage`
       )
       const data = await response.json()
 
@@ -579,7 +535,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${targetVersionId}/impact`
+        `${API_BASE}/datasets/versions/${targetVersionId}/impact`
       )
       const data = await response.json()
 
@@ -625,7 +581,7 @@ function App() {
     if (!impact) {
       try {
         const impactResponse = await fetch(
-          `http://172.20.34.59:8000/datasets/versions/${versionId}/impact`
+          `${API_BASE}/datasets/versions/${versionId}/impact`
         )
         const impactData = await impactResponse.json()
         if (impactResponse.ok) {
@@ -652,7 +608,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/register-onchain`,
+        `${API_BASE}/datasets/versions/${versionId}/register-onchain`,
         { method: 'POST' }
       )
       const data = await response.json()
@@ -683,7 +639,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/verify-onchain`
+        `${API_BASE}/datasets/versions/${versionId}/verify-onchain`
       )
       const data = await response.json()
 
@@ -699,254 +655,6 @@ function App() {
     }
   }
 
-    async function handleGetOwner() {
-    if (!versionId) {
-      setStatus('Load a dataset version first.')
-      return
-    }
-
-    setStatus('Fetching current owner...')
-    setOwnerResult(null)
-
-    try {
-      const response = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/owner`
-      )
-      const data = await response.json()
-
-      if (!response.ok) {
-        setStatus('Fetching owner failed: ' + describeError(data, 'please check the Fabric network and try again.'))
-        return
-      }
-
-      setStatus('')
-      setOwnerResult(data)
-    } catch (error) {
-      setStatus('Error: could not reach backend.')
-    }
-  }
-
-  async function handleTransferOwnership() {
-    if (!versionId) {
-      setStatus('Load a dataset version first.')
-      return
-    }
-
-    const callerOrg = ownerResult?.owner === 'Org2MSP' ? 'Org2MSP' : 'Org1MSP'
-
-    setStatus('Transferring ownership (this may take a few seconds)...')
-    setTransferResult(null)
-
-    try {
-      const response = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/transfer-ownership`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ new_owner_org: transferTargetOrg, caller_org: callerOrg })
-        }
-      )
-      const data = await response.json()
-
-      if (!response.ok) {
-        setStatus('Transfer ownership failed: ' + describeError(data, 'please check the Fabric network and try again.'))
-        return
-      }
-
-      setStatus('')
-      setTransferResult(data)
-      handleGetOwner()
-    } catch (error) {
-      setStatus('Error: could not reach backend.')
-    }
-  }
-
-  async function handleMintToken() {
-    if (!versionId) {
-      setStatus('Load a dataset version first.')
-      return
-    }
-    if (!mintTokenId) {
-      setStatus('Enter a token ID first.')
-      return
-    }
-
-    setStatus('Minting dataset token (this may take a few seconds)...')
-    setMintTokenResult(null)
-
-    try {
-      const response = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/mint-token`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token_id: mintTokenId, owner: mintOwnerOrg, caller_org: 'Org1MSP' })
-        }
-      )
-      const data = await response.json()
-
-      if (!response.ok) {
-        setStatus('Mint token failed: ' + describeError(data, 'please check the Fabric network and try again.'))
-        return
-      }
-
-      setStatus('')
-      setMintTokenResult(data)
-      // Auto-fill the tracked token ID with what was just minted, so the
-      // owner-check/transfer controls below act on it immediately — same
-      // convenience as versionId driving the dataset-ownership controls.
-      setTokenId(mintTokenId)
-      setMintTokenId('')
-    } catch (error) {
-      setStatus('Error: could not reach backend.')
-    }
-  }
-
-  async function handleGetTokenOwner() {
-    if (!tokenId) {
-      setStatus('Enter a token ID first.')
-      return
-    }
-
-    setStatus('Fetching token owner...')
-    setTokenOwnerResult(null)
-
-    try {
-      const response = await fetch(
-        `http://172.20.34.59:8000/datasets/tokens/${tokenId}/owner`
-      )
-      const data = await response.json()
-
-      if (!response.ok) {
-        setStatus('Fetching token owner failed: ' + describeError(data, 'please check the Fabric network and try again.'))
-        return
-      }
-
-      setStatus('')
-      setTokenOwnerResult(data)
-    } catch (error) {
-      setStatus('Error: could not reach backend.')
-    }
-  }
-
-  async function handleTransferToken() {
-    if (!tokenId) {
-      setStatus('Enter a token ID first.')
-      return
-    }
-
-    const callerOrg = tokenOwnerResult?.owner === 'Org2MSP' ? 'Org2MSP' : 'Org1MSP'
-
-    setStatus('Transferring token (this may take a few seconds)...')
-    setTokenTransferResult(null)
-
-    try {
-      const response = await fetch(
-        `http://172.20.34.59:8000/datasets/tokens/${tokenId}/transfer`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ new_owner: tokenTransferTargetOrg, caller_org: callerOrg })
-        }
-      )
-      const data = await response.json()
-
-      if (!response.ok) {
-        setStatus('Transfer token failed: ' + describeError(data, 'please check the Fabric network and try again.'))
-        return
-      }
-
-      setStatus('')
-      setTokenTransferResult(data)
-      handleGetTokenOwner()
-    } catch (error) {
-      setStatus('Error: could not reach backend.')
-    }
-  }
-  async function handleStakeTokens() {
-    if (!versionId) {
-      setStatus('Load a dataset version first.')
-      return
-    }
-    if (!stakeAmount) {
-      setStatus('Enter a stake amount first.')
-      return
-    }
-    setStatus('Staking tokens (this may take a few seconds)...')
-    setStakeResult(null)
-    try {
-      const response = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/stake`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ staker_org: stakeOrg, amount: parseInt(stakeAmount, 10), caller_org: 'Org1MSP' })
-        }
-      )
-      const data = await response.json()
-      if (!response.ok) {
-        setStatus('Stake failed: ' + describeError(data, 'please check the Fabric network and try again.'))
-        return
-      }
-      setStatus('')
-      setStakeResult(data)
-      // Auto-fill the balance-check org with whoever just staked, same
-      // convenience as mint auto-filling tokenId for the controls below.
-      setStakeCheckOrg(stakeOrg)
-      setStakeAmount('')
-    } catch (error) {
-      setStatus('Error: could not reach backend.')
-    }
-  }
-  async function handleGetStakeBalance() {
-    if (!versionId) {
-      setStatus('Load a dataset version first.')
-      return
-    }
-    setStatus('Fetching stake balance...')
-    setStakeBalanceResult(null)
-    try {
-      const response = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/stake-balance?staker_org=${stakeCheckOrg}`
-      )
-      const data = await response.json()
-      if (!response.ok) {
-        setStatus('Fetching stake balance failed: ' + describeError(data, 'please check the Fabric network and try again.'))
-        return
-      }
-      setStatus('')
-      setStakeBalanceResult(data)
-    } catch (error) {
-      setStatus('Error: could not reach backend.')
-    }
-  }
-  async function handleSlashStake() {
-    if (!versionId) {
-      setStatus('Load a dataset version first.')
-      return
-    }
-    setStatus('Slashing stake (this may take a few seconds)...')
-    setSlashResult(null)
-    try {
-      const response = await fetch(
-        `http://172.20.34.59:8000/datasets/versions/${versionId}/slash-stake`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ staker_org: slashOrg, caller_org: 'Org1MSP' })
-        }
-      )
-      const data = await response.json()
-      if (!response.ok) {
-        setStatus('Slash stake failed: ' + describeError(data, 'please check the Fabric network and try again.'))
-        return
-      }
-      setStatus('')
-      setSlashResult(data)
-    } catch (error) {
-      setStatus('Error: could not reach backend.')
-    }
-  }
 
   function formatDate(iso: string) {
     try {
@@ -1555,12 +1263,6 @@ function App() {
                 Register On-Chain
               </button>
                             <button onClick={handleVerifyOnChain}>Verify On-Chain</button>
-              <button onClick={handleGetOwner}>Check Owner</button>
-              <select value={transferTargetOrg} onChange={(e) => setTransferTargetOrg(e.target.value)}>
-                <option value="Org1MSP">Org1MSP</option>
-                <option value="Org2MSP">Org2MSP</option>
-              </select>
-              <button onClick={handleTransferOwnership}>Transfer Ownership</button>
 
               {fabricResult && (
                 <div className="blockchain-result">
@@ -1618,199 +1320,9 @@ function App() {
                 </div>
               )}
 
-              {ownerResult && (
-                <div className="blockchain-result">
-                  <p className="blockchain-detail">Current Owner: {ownerResult.owner || 'unknown'}</p>
-                </div>
-              )}
-
-              {transferResult && (
-                <div className="blockchain-result">
-                  <p className="blockchain-status-ok">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M20 6L9 17l-5-5"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    Ownership transferred
-                  </p>
-                </div>
-              )}
             </div>
           )}
 
-          {versionId && (
-            <div className="section">
-              <h2>Dataset Token</h2>
-              <p className="hint-text">
-                A token here proves ownership of this exact dataset version — the same idea as an NFT proving ownership of a digital item.
-              </p>
-
-              <div className="form-row">
-                <input
-                  type="text"
-                  placeholder="Token ID (e.g. token-1)"
-                  value={mintTokenId}
-                  onChange={(e) => setMintTokenId(e.target.value)}
-                />
-                <select value={mintOwnerOrg} onChange={(e) => setMintOwnerOrg(e.target.value)}>
-                  <option value="Org1MSP">Org1MSP</option>
-                  <option value="Org2MSP">Org2MSP</option>
-                </select>
-                <button className="primary" onClick={handleMintToken}>
-                  Mint Token
-                </button>
-              </div>
-
-              {mintTokenResult && (
-                <div className="blockchain-result">
-                  <p className="blockchain-status-ok">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M20 6L9 17l-5-5"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    Token minted
-                  </p>
-                  <p className="blockchain-detail">Token ID: {tokenId}</p>
-                </div>
-              )}
-
-              <div className="form-row">
-                <input
-                  type="text"
-                  placeholder="Token ID to check/transfer"
-                  value={tokenId}
-                  onChange={(e) => setTokenId(e.target.value)}
-                />
-                <button onClick={handleGetTokenOwner}>Check Token Owner</button>
-              </div>
-
-              {tokenOwnerResult && (
-                <div className="blockchain-result">
-                  <p className="blockchain-detail">Current Owner: {tokenOwnerResult.owner || 'unknown'}</p>
-                </div>
-              )}
-
-              <div className="form-row">
-                <select value={tokenTransferTargetOrg} onChange={(e) => setTokenTransferTargetOrg(e.target.value)}>
-                  <option value="Org1MSP">Org1MSP</option>
-                  <option value="Org2MSP">Org2MSP</option>
-                </select>
-                <button onClick={handleTransferToken}>Transfer Token</button>
-              </div>
-
-              {tokenTransferResult && (
-                <div className="blockchain-result">
-                  <p className="blockchain-status-ok">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M20 6L9 17l-5-5"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    Token transferred
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {versionId && (
-            <div className="section">
-              <h2>Trust Stake</h2>
-              <p className="hint-text">
-                An org stakes tokens against this dataset version as collateral. If the version is later found invalid, the stake can be slashed — the amount goes to zero and the record is marked slashed, not deleted.
-              </p>
-
-              <div className="form-row">
-                <input
-                  type="number"
-                  placeholder="Amount to stake (e.g. 100)"
-                  value={stakeAmount}
-                  onChange={(e) => setStakeAmount(e.target.value)}
-                />
-                <select value={stakeOrg} onChange={(e) => setStakeOrg(e.target.value)}>
-                  <option value="Org1MSP">Org1MSP</option>
-                  <option value="Org2MSP">Org2MSP</option>
-                </select>
-                <button className="primary" onClick={handleStakeTokens}>
-                  Stake Tokens
-                </button>
-              </div>
-
-              {stakeResult && (
-                <div className="blockchain-result">
-                  <p className="blockchain-status-ok">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M20 6L9 17l-5-5"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    Stake placed
-                  </p>
-                  <p className="blockchain-detail">Staker: {stakeResult.staker_org} — Amount: {stakeResult.amount}</p>
-                </div>
-              )}
-
-              <div className="form-row">
-                <select value={stakeCheckOrg} onChange={(e) => setStakeCheckOrg(e.target.value)}>
-                  <option value="Org1MSP">Org1MSP</option>
-                  <option value="Org2MSP">Org2MSP</option>
-                </select>
-                <button onClick={handleGetStakeBalance}>Check Stake Balance</button>
-              </div>
-
-              {stakeBalanceResult && (
-                <div className="blockchain-result">
-                  <p className="blockchain-detail">
-                    Amount: {stakeBalanceResult.stake_balance?.amount ?? 'unknown'} — Slashed: {String(stakeBalanceResult.stake_balance?.slashed ?? 'unknown')}
-                  </p>
-                </div>
-              )}
-
-              <div className="form-row">
-                <select value={slashOrg} onChange={(e) => setSlashOrg(e.target.value)}>
-                  <option value="Org1MSP">Org1MSP</option>
-                  <option value="Org2MSP">Org2MSP</option>
-                </select>
-                <button onClick={handleSlashStake}>Slash Stake</button>
-              </div>
-
-              {slashResult && (
-                <div className="blockchain-result">
-                  <p className="blockchain-status-ok">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M20 6L9 17l-5-5"
-                        stroke="currentColor"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    Stake slashed
-                  </p>
-                  <p className="blockchain-detail">Staker: {slashResult.staker_org}</p>
-                </div>
-              )}
-            </div>
-          )}
         </aside>
       </div>
     </div>
