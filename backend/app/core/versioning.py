@@ -20,22 +20,33 @@ def _schema_fingerprint(records: list) -> str:
     return hashlib.sha256(json.dumps(columns).encode("utf-8")).hexdigest()
 
 
-def create_dataset(name: str) -> str:
+def insert_dataset(conn, name: str) -> str:
+    """Insert a dataset row on the caller's connection. Does NOT commit."""
     dataset_id = str(uuid.uuid4())
-    conn = get_connection()
     conn.execute(
         "INSERT INTO datasets (dataset_id, name, created_at) VALUES (?, ?, ?)",
         (dataset_id, name, datetime.now(timezone.utc).isoformat()),
     )
-    conn.commit()
-    conn.close()
     return dataset_id
 
 
-def create_version(dataset_id: str, records: list, parent_version_id: str = None) -> dict:
+def create_dataset(name: str) -> str:
+    conn = get_connection()
+    try:
+        dataset_id = insert_dataset(conn, name)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return dataset_id
+
+
+def insert_version(conn, dataset_id: str, records: list, parent_version_id: str = None) -> dict:
     """
-    Create a new immutable dataset version from a list of records (dicts).
-    Records must already be in row_index order.
+    Validate lineage and insert a version plus its record rows on the caller's
+    connection. The caller owns the transaction (BEGIN / commit / rollback).
 
     Rules (raise ValueError):
     - dataset_id must exist.
@@ -45,66 +56,55 @@ def create_version(dataset_id: str, records: list, parent_version_id: str = None
     version_number = highest number in this dataset + 1, so branching from an
     older version never reuses a number.
     """
-    conn = get_connection()
-    try:
-        conn.execute("BEGIN IMMEDIATE")
+    if conn.execute(
+        "SELECT 1 FROM datasets WHERE dataset_id = ?", (dataset_id,)
+    ).fetchone() is None:
+        raise ValueError("dataset_id not found")
 
-        if conn.execute(
-            "SELECT 1 FROM datasets WHERE dataset_id = ?", (dataset_id,)
-        ).fetchone() is None:
-            raise ValueError("dataset_id not found")
+    if parent_version_id:
+        parent = conn.execute(
+            "SELECT dataset_id FROM dataset_versions WHERE version_id = ?",
+            (parent_version_id,),
+        ).fetchone()
+        if parent is None:
+            raise ValueError("parent_version_id not found")
+        if parent["dataset_id"] != dataset_id:
+            raise ValueError("parent_version_id belongs to a different dataset")
+    elif conn.execute(
+        "SELECT 1 FROM dataset_versions WHERE dataset_id = ? LIMIT 1", (dataset_id,)
+    ).fetchone() is not None:
+        raise ValueError("dataset already has versions; parent_version_id is required")
 
-        if parent_version_id:
-            parent = conn.execute(
-                "SELECT dataset_id FROM dataset_versions WHERE version_id = ?",
-                (parent_version_id,),
-            ).fetchone()
-            if parent is None:
-                raise ValueError("parent_version_id not found")
-            if parent["dataset_id"] != dataset_id:
-                raise ValueError("parent_version_id belongs to a different dataset")
-        elif conn.execute(
-            "SELECT 1 FROM dataset_versions WHERE dataset_id = ? LIMIT 1", (dataset_id,)
-        ).fetchone() is not None:
-            raise ValueError("dataset already has versions; parent_version_id is required")
+    version_number = conn.execute(
+        "SELECT COALESCE(MAX(version_number), 0) + 1 AS n "
+        "FROM dataset_versions WHERE dataset_id = ?",
+        (dataset_id,),
+    ).fetchone()["n"]
 
-        version_number = conn.execute(
-            "SELECT COALESCE(MAX(version_number), 0) + 1 AS n "
-            "FROM dataset_versions WHERE dataset_id = ?",
-            (dataset_id,),
-        ).fetchone()["n"]
+    fp_result = fingerprint_dataset(records)
+    version_id = str(uuid.uuid4())
+    schema_fp = _schema_fingerprint(records)
 
-        fp_result = fingerprint_dataset(records)
-        version_id = str(uuid.uuid4())
-        schema_fp = _schema_fingerprint(records)
+    conn.execute(
+        """INSERT INTO dataset_versions
+           (version_id, dataset_id, parent_version_id, version_number,
+            schema_fingerprint, dataset_fingerprint, record_count,
+            created_at, integrity_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            version_id, dataset_id, parent_version_id, version_number,
+            schema_fp, fp_result["dataset_fingerprint"], len(records),
+            datetime.now(timezone.utc).isoformat(), "VERIFIED",
+        ),
+    )
 
+    for idx, rec_fp in enumerate(fp_result["record_fingerprints"]):
         conn.execute(
-            """INSERT INTO dataset_versions
-               (version_id, dataset_id, parent_version_id, version_number,
-                schema_fingerprint, dataset_fingerprint, record_count,
-                created_at, integrity_status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                version_id, dataset_id, parent_version_id, version_number,
-                schema_fp, fp_result["dataset_fingerprint"], len(records),
-                datetime.now(timezone.utc).isoformat(), "VERIFIED",
-            ),
+            """INSERT INTO records
+               (record_id, dataset_version_id, record_fingerprint, row_index, status)
+               VALUES (?, ?, ?, ?, ?)""",
+            (str(uuid.uuid4()), version_id, rec_fp, idx, "VALID"),
         )
-
-        for idx, rec_fp in enumerate(fp_result["record_fingerprints"]):
-            conn.execute(
-                """INSERT INTO records
-                   (record_id, dataset_version_id, record_fingerprint, row_index, status)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (str(uuid.uuid4()), version_id, rec_fp, idx, "VALID"),
-            )
-
-        conn.commit()
-    except BaseException:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
     return {
         "version_id": version_id,
@@ -112,6 +112,24 @@ def create_version(dataset_id: str, records: list, parent_version_id: str = None
         "dataset_fingerprint": fp_result["dataset_fingerprint"],
         "record_count": len(records),
     }
+
+
+def create_version(dataset_id: str, records: list, parent_version_id: str = None) -> dict:
+    """
+    Create a new immutable dataset version in its own transaction.
+    Records must already be in row_index order. See insert_version for rules.
+    """
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        result = insert_version(conn, dataset_id, records, parent_version_id)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return result
 
 
 def list_all_datasets() -> list:

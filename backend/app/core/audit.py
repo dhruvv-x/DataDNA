@@ -128,16 +128,35 @@ def _detect_schema_issues(records: list) -> dict:
     return issues
 
 
-def run_audit(dataset_version_id: str, records: list) -> dict:
+def _to_analyzable(value):
     """
-    Run full statistical audit on a set of records and persist results.
-    Called at ingestion time, using in-memory records before they're discarded.
+    JSON uploads can hold lists/dicts as cell values. pandas cannot hash those
+    (duplicated() crashes when a column mixes lists with other values), so they
+    are turned into a stable JSON string for the pandas based checks only.
+    The original records are never modified.
+    """
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+    return value
+
+
+def _prepare_for_analysis(records: list) -> list:
+    return [{k: _to_analyzable(v) for k, v in r.items()} for r in records]
+
+
+def analyze_records(records: list) -> dict:
+    """
+    Pure computation: run all checks on in-memory records, touch no database.
+    Kept separate from persistence so an upload can compute the audit BEFORE
+    it writes anything.
     """
     if not records:
         raise ValueError("Cannot audit empty record set")
 
+    flat = _prepare_for_analysis(records)
+
     # Attempt numeric coercion for outlier detection (CSV values arrive as strings)
-    df = pd.DataFrame(records)
+    df = pd.DataFrame(flat)
     df_numeric = df.copy()
     for col in df_numeric.columns:
         coerced = pd.to_numeric(df_numeric[col], errors="coerce")
@@ -146,39 +165,66 @@ def run_audit(dataset_version_id: str, records: list) -> dict:
         if coerced.notna().sum() >= len(coerced) * 0.5:
             df_numeric[col] = coerced
 
-    missing_values = _detect_missing_values(df)
-    duplicate_count = _detect_duplicates(records)
-    outliers = _detect_outliers(df_numeric)
-    schema_issues = _detect_schema_issues(records)
+    return {
+        "total_records": len(records),
+        "missing_values": _detect_missing_values(df),
+        "duplicate_count": _detect_duplicates(flat),
+        "outliers": _detect_outliers(df_numeric),
+        # Schema check uses the ORIGINAL records so "list vs str" is still reported.
+        "schema_issues": _detect_schema_issues(records),
+    }
 
+
+def insert_audit(conn, dataset_version_id: str, analysis: dict) -> dict:
+    """
+    Write one audit row using the caller's connection. Does NOT commit, so it
+    can be part of a larger transaction (see app/core/ingest.py).
+    """
     audit_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
 
-    conn = get_connection()
     conn.execute(
         """INSERT INTO audit_results
            (audit_id, dataset_version_id, total_records, missing_values_json,
             duplicate_count, outliers_json, schema_issues_json, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            audit_id, dataset_version_id, len(records),
-            json.dumps(missing_values), duplicate_count,
-            json.dumps(outliers), json.dumps(schema_issues), created_at,
+            audit_id, dataset_version_id, analysis["total_records"],
+            json.dumps(analysis["missing_values"]), analysis["duplicate_count"],
+            json.dumps(analysis["outliers"]), json.dumps(analysis["schema_issues"]),
+            created_at,
         ),
     )
-    conn.commit()
-    conn.close()
 
     return {
         "audit_id": audit_id,
         "dataset_version_id": dataset_version_id,
-        "total_records": len(records),
-        "missing_values": missing_values,
-        "duplicate_count": duplicate_count,
-        "outliers": outliers,
-        "schema_issues": schema_issues,
+        "total_records": analysis["total_records"],
+        "missing_values": analysis["missing_values"],
+        "duplicate_count": analysis["duplicate_count"],
+        "outliers": analysis["outliers"],
+        "schema_issues": analysis["schema_issues"],
         "created_at": created_at,
     }
+
+
+def run_audit(dataset_version_id: str, records: list) -> dict:
+    """
+    Analyze records and persist the result in its own transaction.
+    The connection is always released, even when the insert fails.
+    """
+    analysis = analyze_records(records)
+
+    conn = get_connection()
+    try:
+        result = insert_audit(conn, dataset_version_id, analysis)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return result
 
 
 def get_audit(dataset_version_id: str) -> dict:

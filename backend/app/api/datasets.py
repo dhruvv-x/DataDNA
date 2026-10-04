@@ -7,10 +7,11 @@ from pydantic import BaseModel
 import json
 from datetime import datetime, timezone
 from app.core.parsing import parse_upload, ParseError
-from app.core.versioning import create_dataset, create_version, get_lineage, invalidate_version, get_version, list_all_datasets, mark_registered_onchain
+from app.core.ingest import ingest_new_dataset, ingest_new_version
+from app.core.versioning import get_lineage, invalidate_version, get_version, list_all_datasets, mark_registered_onchain
 from app.core.impact import analyze_impact
 from app.core.fabric_client import invoke, invoke_as_org2, query, FabricError
-from app.core.audit import run_audit, get_audit
+from app.core.audit import get_audit
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -21,11 +22,21 @@ def list_datasets():
     return {"datasets": list_all_datasets()}
 
 
+def _audit_summary(audit: dict) -> dict:
+    return {
+        "duplicate_count": audit["duplicate_count"],
+        "missing_values": audit["missing_values"],
+        "outliers": audit["outliers"],
+        "schema_issues": audit["schema_issues"],
+    }
+
+
 @router.post("")
 async def upload_dataset(name: str = Form(...), file: UploadFile = File(...)):
     """
     Create a new dataset from an uploaded CSV or JSON file.
-    This creates the dataset AND its first version (V1) in one call.
+    Dataset, V1, record fingerprints and audit are saved in ONE transaction:
+    if anything fails, nothing is saved and the caller gets a visible error.
     """
     raw_bytes = await file.read()
 
@@ -34,26 +45,19 @@ async def upload_dataset(name: str = Form(...), file: UploadFile = File(...)):
     except ParseError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    dataset_id = create_dataset(name)
-
     try:
-        version_result = create_version(dataset_id, records, parent_version_id=None)
+        result = ingest_new_dataset(name, records)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create version: {e}")
+        raise HTTPException(status_code=500, detail=f"Upload failed, nothing was saved: {e}")
 
-    audit_result = run_audit(version_result["version_id"], records)
-
+    audit = result.pop("audit")
     return {
-        "dataset_id": dataset_id,
         "name": name,
         "filename": file.filename,
-        **version_result,
-        "audit": {
-            "duplicate_count": audit_result["duplicate_count"],
-            "missing_values": audit_result["missing_values"],
-            "outliers": audit_result["outliers"],
-            "schema_issues": audit_result["schema_issues"],
-        },
+        **result,
+        "audit": _audit_summary(audit),
     }
 
 
@@ -73,7 +77,7 @@ async def upload_new_version(
     parent_version_id: str = Form(default=None),
 ):
     """
-    Add a new immutable version to an existing dataset.
+    Add a new immutable version to an existing dataset (atomic with its audit).
     If parent_version_id is not given, uses the latest existing version as parent.
     """
     raw_bytes = await file.read()
@@ -91,24 +95,17 @@ async def upload_new_version(
         parent_version_id = lineage[-1]["version_id"]  # latest version
 
     try:
-        version_result = create_version(dataset_id, records, parent_version_id=parent_version_id)
+        result = ingest_new_version(dataset_id, records, parent_version_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create version: {e}")
+        raise HTTPException(status_code=500, detail=f"Upload failed, nothing was saved: {e}")
 
-    audit_result = run_audit(version_result["version_id"], records)
-
+    audit = result.pop("audit")
     return {
-        "dataset_id": dataset_id,
         "filename": file.filename,
-        **version_result,
-        "audit": {
-            "duplicate_count": audit_result["duplicate_count"],
-            "missing_values": audit_result["missing_values"],
-            "outliers": audit_result["outliers"],
-            "schema_issues": audit_result["schema_issues"],
-        },
+        **result,
+        "audit": _audit_summary(audit),
     }
 
 
