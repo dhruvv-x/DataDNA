@@ -5,3 +5,4 @@ backend/datadna.db
 backend/*.db
 backend/datadna_backup_*.db
 .env
+*.db
