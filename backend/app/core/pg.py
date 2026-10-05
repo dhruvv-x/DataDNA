@@ -10,6 +10,8 @@ from contextlib import contextmanager
 import psycopg
 from psycopg.rows import dict_row
 
+from app.core import env  # noqa: F401  (loads datadna/.env)
+
 DEFAULT_DATABASE_URL = "postgresql://compliance:compliance_dev@localhost:5432/compliance"
 
 
