@@ -84,3 +84,26 @@ def can_manage_user(actor: CurrentUser, target: dict) -> bool:
     if actor.role == HOD:
         return target["role"] == FACULTY and target["department_id"] == actor.department_id
     return False
+
+
+def department_filter(user: CurrentUser, alias: str = "d") -> tuple[str, tuple]:
+    """Departments: DEAN sees all, HOD and FACULTY only their own."""
+    if user.role == DEAN:
+        return "TRUE", ()
+    if user.role in (HOD, FACULTY):
+        return f"{alias}.id = %s", (user.department_id,)
+    return "FALSE", ()
+
+
+def subject_filter(user: CurrentUser, alias: str = "s") -> tuple[str, tuple]:
+    """Subjects: DEAN sees all, HOD and FACULTY only their own department's."""
+    if user.role == DEAN:
+        return "TRUE", ()
+    if user.role in (HOD, FACULTY):
+        return f"{alias}.department_id = %s", (user.department_id,)
+    return "FALSE", ()
+
+
+def can_upload(user: CurrentUser) -> bool:
+    """Only the owner (FACULTY) and the DEAN upload. HOD only views. Visibility is checked first, separately."""
+    return user.role in (FACULTY, DEAN)

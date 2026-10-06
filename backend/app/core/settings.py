@@ -84,6 +84,18 @@ def cookie_path() -> str:
     return value
 
 
+def storage_dir() -> str:
+    """Folder for uploaded files. Must be OUTSIDE the git repo. Default: ~/datadna_storage"""
+    from pathlib import Path
+    raw = os.environ.get("STORAGE_DIR", "").strip() or "~/datadna_storage"
+    return str(Path(raw).expanduser().resolve())
+
+
+def max_upload_mb() -> int:
+    """Global upload cap. A checklist item may set a lower limit, never a higher one."""
+    return _int("MAX_UPLOAD_MB", 50, 1, 500)
+
+
 def cors_origins() -> list[str]:
     raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     return [o.strip() for o in raw.split(",") if o.strip()]
@@ -101,3 +113,13 @@ def startup_checks() -> None:
     refresh_token_days()
     lockout_threshold()
     lockout_minutes()
+    max_upload_mb()
+    from pathlib import Path
+    root = Path(storage_dir())
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        probe = root / ".write_test"
+        probe.write_bytes(b"ok")
+        probe.unlink()
+    except OSError as exc:
+        raise SettingsError(f"STORAGE_DIR ({root}) is not writable: {exc}")

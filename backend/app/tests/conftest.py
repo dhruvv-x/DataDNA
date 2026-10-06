@@ -12,3 +12,19 @@ os.environ["COOKIE_SAMESITE"] = "lax"
 os.environ["CORS_ORIGINS"] = "http://localhost:5173"
 for _name in ("ACCESS_TOKEN_MINUTES", "REFRESH_TOKEN_DAYS", "LOCKOUT_THRESHOLD", "LOCKOUT_MINUTES"):
     os.environ.pop(_name, None)
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _private_storage(tmp_path, monkeypatch):
+    """Uploaded files in tests go to a temp folder, never to ~/datadna_storage."""
+    monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "storage"))
+
+
+def pytest_make_parametrize_id(config, val, argname):
+    """Never print raw file bytes in test names."""
+    if isinstance(val, (bytes, bytearray)):
+        return f"{argname}_{len(val)}B"
+    return None

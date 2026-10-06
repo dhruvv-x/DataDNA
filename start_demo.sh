@@ -24,7 +24,7 @@ echo "Backend starting... (log: /tmp/backend.log)"
 sleep 3
 
 echo "=== 6. Testing backend ==="
-curl -s "http://${WSL_IP}:8000/datasets" > /dev/null && echo "Backend OK" || echo "Backend NOT responding yet, check /tmp/backend.log"
+curl -s "http://${WSL_IP}:8000/health" > /dev/null && echo "Backend OK" || echo "Backend NOT responding yet, check /tmp/backend.log"
 
 echo ""
 echo "=== DONE ==="

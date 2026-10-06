@@ -89,7 +89,7 @@ def mk_submission(conn, cf=None, tpl=None):
 def mk_version(conn, submission, user, n=1, digest=None):
     return q1(conn,
               "INSERT INTO submission_versions (submission_id, version_no, storage_key, original_filename, "
-              "size_bytes, sha256, uploaded_by) VALUES (%s, %s, 'k/' || %s, 'f.pdf', 100, %s, %s) RETURNING id",
+              "size_bytes, sha256, uploaded_by, uploaded_by_role) VALUES (%s, %s, 'k/' || %s, 'f.pdf', 100, %s, %s, 'FACULTY') RETURNING id",
               (submission, n, uid(), digest or sha(uid()), user))["id"]
 
 
@@ -307,8 +307,8 @@ def test_version_number_unique_per_submission(pg):
     w = world(pg)
     mk_version(pg, w["sub"], w["faculty"], n=1)
     rejects(pg, errors.UniqueViolation,
-            "INSERT INTO submission_versions (submission_id,version_no,storage_key,original_filename,size_bytes,sha256,uploaded_by) "
-            "VALUES (%s,1,'k','f',1,%s,%s)", (w["sub"], sha("z"), w["faculty"]))
+            "INSERT INTO submission_versions (submission_id,version_no,storage_key,original_filename,size_bytes,sha256,uploaded_by,uploaded_by_role) "
+            "VALUES (%s,1,'k','f',1,%s,%s,'FACULTY')", (w["sub"], sha("z"), w["faculty"]))
     mk_version(pg, w["sub"], w["faculty"], n=2)
 
 
@@ -316,15 +316,15 @@ def test_version_number_unique_per_submission(pg):
 def test_sha256_must_be_64_lowercase_hex(pg, bad):
     w = world(pg)
     rejects(pg, errors.CheckViolation,
-            "INSERT INTO submission_versions (submission_id,version_no,storage_key,original_filename,size_bytes,sha256,uploaded_by) "
-            "VALUES (%s,1,'k','f',1,%s,%s)", (w["sub"], bad, w["faculty"]))
+            "INSERT INTO submission_versions (submission_id,version_no,storage_key,original_filename,size_bytes,sha256,uploaded_by,uploaded_by_role) "
+            "VALUES (%s,1,'k','f',1,%s,%s,'FACULTY')", (w["sub"], bad, w["faculty"]))
 
 
 def test_empty_file_size_rejected(pg):
     w = world(pg)
     rejects(pg, errors.CheckViolation,
-            "INSERT INTO submission_versions (submission_id,version_no,storage_key,original_filename,size_bytes,sha256,uploaded_by) "
-            "VALUES (%s,1,'k','f',0,%s,%s)", (w["sub"], sha("q"), w["faculty"]))
+            "INSERT INTO submission_versions (submission_id,version_no,storage_key,original_filename,size_bytes,sha256,uploaded_by,uploaded_by_role) "
+            "VALUES (%s,1,'k','f',0,%s,%s,'FACULTY')", (w["sub"], sha("q"), w["faculty"]))
 
 
 def test_versions_cannot_be_updated_or_deleted(pg):
