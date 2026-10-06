@@ -7,6 +7,7 @@ import os
 os.environ.setdefault("JWT_SECRET", "test-secret-" + "x" * 48)
 os.environ["BCRYPT_COST"] = "4"  # fast hashing, tests only (real default is 12)
 os.environ["APP_ENV"] = "test"
+os.environ["RULES_SWEEP_MINUTES"] = "0"  # no background thread in tests
 os.environ["COOKIE_SECURE"] = "false"
 os.environ["COOKIE_SAMESITE"] = "lax"
 os.environ["CORS_ORIGINS"] = "http://localhost:5173"

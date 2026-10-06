@@ -351,6 +351,8 @@ def test_late_flag_can_never_be_cleared(pg):
 def test_late_flag_can_be_waived(pg):
     w = world(pg)
     f = mk_flag(pg, w["cf"], w["sub"], kind="LATE")
+    pg.execute("INSERT INTO exceptions (course_file_id, submission_id, kind, flag_id, reason, granted_by) "
+               "VALUES (%s,%s,'WAIVER',%s,'approved by the dean after review',%s)", (w["cf"], w["sub"], f, w["faculty"]))
     pg.execute("UPDATE flags SET status='WAIVED' WHERE id=%s", (f,))
     assert q1(pg, "SELECT status FROM flags WHERE id=%s", (f,))["status"] == "WAIVED"
 

@@ -129,12 +129,12 @@ def test_bulk_bad_shape_is_422(client, setup, items):
 def test_checklist_shows_every_row_with_deadline_and_no_version_yet(client, pg, setup):
     cf = post(client, setup["dean"], body(setup["s_THEORY"], setup["sem2"], setup["fac_x1"])).json()
     client.put(f"/semesters/{setup['sem2']['id']}/deadlines", headers=as_user(client, setup["dean"]),
-               json={"items": [{"template_id": str(setup["t_both"]["id"]), "due_at": "2028-09-30T17:00:00+05:30"}]})
+               json={"items": [{"template_id": str(setup["t_both"]["id"]), "due_at": "2099-09-30T17:00:00+05:30"}]})
     items = client.get(f"/course-files/{cf['id']}/submissions", headers=as_user(client, setup["fac_x1"])).json()
     mine = {i["template_id"]: i for i in items if i["template_id"] in (str(setup["t_theory"]["id"]), str(setup["t_both"]["id"]))}
     assert len(mine) == 2 and str(setup["t_lab"]["id"]) not in {i["template_id"] for i in items}
     both = mine[str(setup["t_both"]["id"])]
-    assert both["due_at"].startswith("2028-09-30") and both["current_version_id"] is None and both["version_count"] == 0
+    assert both["due_at"].startswith("2099-09-30") and both["current_version_id"] is None and both["version_count"] == 0
     assert mine[str(setup["t_theory"]["id"])]["due_at"] is None and both["open_flags"] == []
 
 

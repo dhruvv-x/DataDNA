@@ -107,3 +107,8 @@ def subject_filter(user: CurrentUser, alias: str = "s") -> tuple[str, tuple]:
 def can_upload(user: CurrentUser) -> bool:
     """Only the owner (FACULTY) and the DEAN upload. HOD only views. Visibility is checked first, separately."""
     return user.role in (FACULTY, DEAN)
+
+
+def can_grant_exception(user: CurrentUser) -> bool:
+    """Extensions and waivers: DEAN, and HOD (only inside own department; visibility is checked first)."""
+    return user.role in (DEAN, HOD)

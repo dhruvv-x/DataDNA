@@ -14,7 +14,7 @@ from psycopg import errors
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.api.deps import current_user, get_db
-from app.core import auditlog
+from app.core import auditlog, clock, rules
 from app.core.filecheck import SUPPORTED_EXTENSIONS
 from app.core.scope import DEAN, CurrentUser, department_filter, not_found, require_role, subject_filter
 from app.core.submission_rows import backfill_submissions
@@ -324,6 +324,12 @@ def update_template(template_id: uuid.UUID, body: TemplatePatch,
         row = db.execute(f"UPDATE checklist_templates SET {sets} WHERE id = %s RETURNING *",
                          (*changes.values(), template_id)).fetchone()
     added = backfill_submissions(db, template_id=template_id) if changes.get("is_active") else 0
+    if "is_active" in changes and changes["is_active"] != old["is_active"]:
+        rows = db.execute("SELECT DISTINCT cf.semester_id FROM submissions sub JOIN course_files cf ON cf.id = sub.course_file_id "
+                          "WHERE sub.template_id = %s", (template_id,)).fetchall()
+        for r in rows:
+            rules.evaluate_many(db, rules.submissions_of(db, r["semester_id"], [template_id]),
+                                now=clock.utcnow(), trigger="template_change", by_user=user.id)
     _audit(db, user, "template.update", "checklist_template", template_id,
            {"old": {k: old[k] for k in changes}, "new": changes, "submission_rows_added": added})
     db.commit()
@@ -338,6 +344,7 @@ class DeadlineItem(Strict):
 
 class DeadlinesIn(Strict):
     items: list[DeadlineItem] = Field(min_length=1, max_length=100)
+    allow_past: bool = False  # a deadline already in the past flags every empty item at once: say so on purpose
 
     @model_validator(mode="after")
     def v_unique(self):
@@ -354,6 +361,12 @@ def set_deadlines(semester_id: uuid.UUID, body: DeadlinesIn,
     require_role(user, DEAN)
     if db.execute("SELECT 1 FROM semesters WHERE id = %s", (semester_id,)).fetchone() is None:
         raise not_found()
+    now = clock.utcnow()
+    if not body.allow_past:
+        past = [str(i.template_id) for i in body.items if i.due_at <= now]
+        if past:
+            raise HTTPException(422, "A deadline is in the past, so every empty item would be flagged MISSING at once. "
+                                     "If that is really intended, send allow_past=true.")
     changes = []
     with db_rules():
         for item in body.items:
@@ -367,7 +380,10 @@ def set_deadlines(semester_id: uuid.UUID, body: DeadlinesIn,
                 (semester_id, item.template_id, item.due_at))
             changes.append({"template_id": str(item.template_id),
                             "old": old["due_at"].isoformat() if old else None, "new": item.due_at.isoformat()})
-    _audit(db, user, "deadlines.set", "semester", semester_id, {"changes": changes})
+    _audit(db, user, "deadlines.set", "semester", semester_id, {"changes": changes, "allow_past": body.allow_past})
+    # A moved deadline can clear MISSING/INCOMPLETE (never LATE) or raise them (current semester only).
+    rules.evaluate_many(db, rules.submissions_of(db, semester_id, [i.template_id for i in body.items]),
+                        now=now, trigger="deadline_change", by_user=user.id)
     db.commit()
     return get_deadlines(semester_id, user, db)
 

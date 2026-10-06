@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from psycopg.types.json import Jsonb
 
 from app.api.deps import current_user, get_db
-from app.core import auditlog, clock, filecheck, settings, storage
+from app.core import auditlog, clock, filecheck, rules, settings, storage
 from app.core.scope import DEAN, CurrentUser, can_upload, course_file_filter, forbidden, not_found
 
 router = APIRouter(tags=["submissions"])
@@ -127,25 +127,21 @@ def upload_version(
         ).fetchone()
         db.execute("UPDATE submissions SET current_version_id = %s WHERE id = %s", (version["id"], submission_id))
 
-        flag_raised, flags_cleared = False, 0
-        if problem:
-            flag_raised = db.execute(
-                """INSERT INTO flags (course_file_id, submission_id, kind, reason, detail, raised_by_version_id, raised_at)
-                   VALUES (%s, %s, 'FORMAT', %s, %s, %s, %s) ON CONFLICT DO NOTHING""",
-                (ctx["course_file_id"], submission_id, problem, Jsonb({"version_no": version_no}),
-                 version["id"], received_at)).rowcount == 1
-        else:
-            flags_cleared = db.execute(
-                """UPDATE flags SET status = 'CLEARED', cleared_by_version_id = %s, cleared_at = %s
-                   WHERE submission_id = %s AND kind = 'FORMAT' AND status = 'OPEN'""",
-                (version["id"], received_at, submission_id)).rowcount
+        changes = rules.evaluate_submission(
+            db, submission_id, now=received_at, trigger="upload", by_user=user.id,
+            new_version={"id": version["id"], "version_no": version_no, "uploaded_at": received_at,
+                         "validation_status": status, "problem": problem})
+        raised = [c["kind"] for c in changes if c["action"] == "raise"]
+        cleared = [c["kind"] for c in changes if c["action"] == "clear"]
+        flag_raised = "FORMAT" in raised
+        flags_cleared = sum(1 for k in cleared if k == "FORMAT")
 
         auditlog.write(db, actor_id=user.id, actor_role=user.role, action="submission.upload",
                        entity_type="submission", entity_id=submission_id,
                        payload={"version_id": str(version["id"]), "version_no": version_no, "sha256": sha256,
                                 "size_bytes": size, "extension": ext, "validation_status": status,
-                                "on_behalf_reason": on_behalf_reason, "format_flag_raised": flag_raised,
-                                "format_flags_cleared": flags_cleared})
+                                "on_behalf_reason": on_behalf_reason, "flags_raised": raised,
+                                "flags_cleared": cleared})
         db.commit()
     except BaseException:
         storage.remove(placed_key)
@@ -158,7 +154,11 @@ def upload_version(
         "is_current": True,
         "format_flag_raised": flag_raised,
         "format_flags_cleared": flags_cleared,
-        "message": ("Saved, but the file has a problem: " + problem) if problem else "Saved. The file passed the format checks.",
+        "flags_raised": raised,
+        "flags_cleared": cleared,
+        "late": "LATE" in raised,
+        "message": (("Saved, but the file has a problem: " + problem) if problem else "Saved. The file passed the format checks.")
+                   + (" Note: it arrived after the deadline, so a lateness flag was recorded." if "LATE" in raised else ""),
     }
 
 

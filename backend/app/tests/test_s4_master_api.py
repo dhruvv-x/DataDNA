@@ -26,7 +26,7 @@ WRITES = [
     ("PATCH", f"/subjects/{RAND}", {"name": "N"}),
     ("POST", "/checklist-templates", {"code": "T1", "title": "T", "allowed_extensions": ["pdf"]}),
     ("PATCH", f"/checklist-templates/{RAND}", {"title": "N"}),
-    ("PUT", f"/semesters/{RAND}/deadlines", {"items": [{"template_id": RAND, "due_at": "2030-01-01T00:00:00+05:30"}]}),
+    ("PUT", f"/semesters/{RAND}/deadlines", {"items": [{"template_id": RAND, "due_at": "2099-01-01T00:00:00+05:30"}]}),
     ("POST", "/course-files", {"subject_id": RAND, "semester_id": RAND, "faculty_id": RAND}),
     ("POST", "/course-files/bulk", {"items": [{"subject_id": RAND, "semester_id": RAND, "faculty_id": RAND}]}),
 ]
@@ -324,7 +324,7 @@ DUE = "2026-09-30T17:00:00+05:30"
 
 
 def put_deadlines(client, who, sem_id, items):
-    return call(client, who, "PUT", f"/semesters/{sem_id}/deadlines", json={"items": items})
+    return call(client, who, "PUT", f"/semesters/{sem_id}/deadlines", json={"items": items, "allow_past": True})
 
 
 def test_dean_sets_deadlines_in_bulk_and_everyone_reads_them(client, world, pg):

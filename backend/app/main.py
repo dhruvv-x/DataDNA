@@ -4,9 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
 from app.api.course_files import router as course_files_router
 from app.api.master import router as master_router
+from app.api.rules import router as rules_router
 from app.api.submissions import router as submissions_router
 from app.api.users import router as users_router
-from app.core import settings
+from app.core import scheduler, settings
 from app.core.pool import close_pool
 
 app = FastAPI(title="Faculty Compliance & Trust Engine API")
@@ -36,10 +37,12 @@ async def never_cache_account_data(request, call_next):
 @app.on_event("startup")
 def startup():
     settings.startup_checks()  # stops the app with a clear message if JWT_SECRET, STORAGE_DIR etc. are wrong
+    scheduler.start()          # automatic deadline check (RULES_SWEEP_MINUTES, 0 = off)
 
 
 @app.on_event("shutdown")
 def shutdown():
+    scheduler.stop()
     close_pool()
 
 
@@ -53,3 +56,4 @@ app.include_router(users_router)
 app.include_router(master_router)
 app.include_router(course_files_router)
 app.include_router(submissions_router)
+app.include_router(rules_router)

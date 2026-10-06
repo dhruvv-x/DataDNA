@@ -96,6 +96,11 @@ def max_upload_mb() -> int:
     return _int("MAX_UPLOAD_MB", 50, 1, 500)
 
 
+def rules_sweep_minutes() -> int:
+    """How often the API re-checks deadlines by itself. 0 switches the automatic check off."""
+    return _int("RULES_SWEEP_MINUTES", 10, 0, 1440)
+
+
 def cors_origins() -> list[str]:
     raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     return [o.strip() for o in raw.split(",") if o.strip()]
@@ -114,6 +119,7 @@ def startup_checks() -> None:
     lockout_threshold()
     lockout_minutes()
     max_upload_mb()
+    rules_sweep_minutes()
     from pathlib import Path
     root = Path(storage_dir())
     try:

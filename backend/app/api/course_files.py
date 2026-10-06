@@ -153,6 +153,8 @@ def checklist(course_file_id: uuid.UUID, user: CurrentUser = Depends(current_use
         SELECT sub.id AS submission_id, t.id AS template_id, t.code, t.title, t.sort_order,
                t.is_active AS template_active, t.allowed_extensions, t.max_size_mb,
                dl.due_at,
+               (SELECT max(e.new_due_at) FROM exceptions e WHERE e.submission_id = sub.id AND e.kind = 'EXTENSION') AS extended_to,
+               GREATEST(dl.due_at, (SELECT max(e.new_due_at) FROM exceptions e WHERE e.submission_id = sub.id AND e.kind = 'EXTENSION')) AS effective_due_at,
                v.id AS current_version_id, v.version_no, v.validation_status, v.uploaded_at,
                v.uploaded_by, ub.full_name AS uploaded_by_name, v.uploaded_by_role, v.on_behalf_reason,
                v.sha256, v.size_bytes, v.original_filename,
