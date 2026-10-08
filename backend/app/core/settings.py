@@ -101,6 +101,15 @@ def rules_sweep_minutes() -> int:
     return _int("RULES_SWEEP_MINUTES", 10, 0, 1440)
 
 
+def content_scoring_enabled() -> bool:
+    """
+    Whether the Content part (10 points by default) is scored. Off until the cross-document checks exist (S9).
+    While it is off, the Content weight is shared among Completeness, Timeliness and Format, and every
+    score breakdown says so.
+    """
+    return os.environ.get("CONTENT_SCORING_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+
+
 def cors_origins() -> list[str]:
     raw = os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     return [o.strip() for o in raw.split(",") if o.strip()]
@@ -120,6 +129,7 @@ def startup_checks() -> None:
     lockout_minutes()
     max_upload_mb()
     rules_sweep_minutes()
+    content_scoring_enabled()
     from pathlib import Path
     root = Path(storage_dir())
     try:

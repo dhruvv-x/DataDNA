@@ -13,7 +13,7 @@ from pydantic import AwareDatetime, Field, field_validator
 
 from app.api.deps import current_user, get_db
 from app.api.master import Strict
-from app.core import auditlog, clock, rules
+from app.core import auditlog, clock, rules, score_store
 from app.core.scope import DEAN, CurrentUser, can_grant_exception, course_file_filter, forbidden, not_found, require_role
 
 router = APIRouter(tags=["rules"])
@@ -122,7 +122,9 @@ def waive_flag(flag_id: uuid.UUID, body: ReasonIn, user: CurrentUser = Depends(c
                          (flag["course_file_id"],)).fetchone()
         if not sem["is_current"]:
             raise HTTPException(409, "This semester is closed. Only the Dean can change it.")
-    exc = _waive(db, flag, user, body.reason, clock.utcnow())
+    now = clock.utcnow()
+    exc = _waive(db, flag, user, body.reason, now)
+    score_store.refresh_course_files(db, [flag["course_file_id"]], trigger="waiver", now=now)
     db.commit()
     return {"flag_id": flag_id, "status": "WAIVED", "exception": exc}
 
@@ -142,6 +144,7 @@ def waive_all_late(semester_id: uuid.UUID, body: BulkWaiveIn, user: CurrentUser 
     now = clock.utcnow()
     for flag in flags:
         _waive(db, flag, user, body.reason, now)
+    score_store.refresh_course_files(db, {f["course_file_id"] for f in flags}, trigger="waiver", now=now)
     auditlog.write(db, actor_id=user.id, actor_role=user.role, action="flags.waive_late_bulk", entity_type="semester",
                    entity_id=semester_id, payload={"template_id": str(body.template_id), "count": len(flags), "reason": body.reason})
     db.commit()

@@ -14,7 +14,7 @@ from psycopg import errors
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.api.deps import current_user, get_db
-from app.core import auditlog, clock, rules
+from app.core import auditlog, clock, rules, score_store
 from app.core.filecheck import SUPPORTED_EXTENSIONS
 from app.core.scope import DEAN, CurrentUser, department_filter, not_found, require_role, subject_filter
 from app.core.submission_rows import backfill_submissions
@@ -166,11 +166,28 @@ def make_current(semester_id: uuid.UUID, user: CurrentUser = Depends(current_use
     if target is None:
         raise not_found()
     previous = db.execute("SELECT id FROM semesters WHERE is_current").fetchone()
+    now = clock.utcnow()
+    closing = previous is not None and previous["id"] != semester_id
+    if closing:
+        # Last deadline check of the old semester while it is still current, so its final score is complete.
+        rules.evaluate_many(db, rules.submissions_of(db, previous["id"]), now=now, trigger="semester_close",
+                            by_user=user.id, refresh_scores=False)
     with db_rules():
         db.execute("UPDATE semesters SET is_current = false WHERE is_current")
         row = db.execute("UPDATE semesters SET is_current = true WHERE id = %s RETURNING *", (semester_id,)).fetchone()
     _audit(db, user, "semester.make_current", "semester", semester_id,
            {"previous_current": str(previous["id"]) if previous else None})
+    if closing:
+        finals = score_store.finalize_semester(db, previous["id"], now=now)
+        _audit(db, user, "scores.semester_final", "semester", previous["id"], finals)
+    # The semester that opens is scored with the weights in force today, and stays on them (S6).
+    score_store.ensure_semester_weights(db, semester_id, set_by=user.id,
+                                        reason="Weights in force when the semester became current")
+    if previous is None or closing:
+        # Deadlines that already passed are flagged right away, not at the next sweep.
+        rules.evaluate_many(db, rules.submissions_of(db, semester_id), now=now, trigger="semester_open",
+                            by_user=user.id, refresh_scores=False)
+    score_store.refresh_semester(db, semester_id, trigger="semester_open", now=now)
     db.commit()
     return row
 

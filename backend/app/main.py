@@ -5,6 +5,7 @@ from app.api.auth import router as auth_router
 from app.api.course_files import router as course_files_router
 from app.api.master import router as master_router
 from app.api.rules import router as rules_router
+from app.api.scores import router as scores_router
 from app.api.submissions import router as submissions_router
 from app.api.users import router as users_router
 from app.core import scheduler, settings
@@ -57,3 +58,4 @@ app.include_router(master_router)
 app.include_router(course_files_router)
 app.include_router(submissions_router)
 app.include_router(rules_router)
+app.include_router(scores_router)

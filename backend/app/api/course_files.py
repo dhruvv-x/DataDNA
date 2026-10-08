@@ -8,7 +8,7 @@ from pydantic import Field, field_validator
 from app.api.master import Strict
 
 from app.api.deps import current_user, get_db
-from app.core import auditlog
+from app.core import auditlog, clock, score_store
 from app.core.scope import DEAN, FACULTY, CurrentUser, course_file_filter, not_found, require_role
 from app.core.submission_rows import create_for_course_file
 
@@ -120,6 +120,7 @@ def create_course_file(body: CourseFileIn, user: CurrentUser = Depends(current_u
     require_role(user, DEAN)
     created = _create_one(db, body)
     _audit_created(db, user, created, body)
+    score_store.refresh_course_files(db, [created["id"]], trigger="course_file_created", now=clock.utcnow())
     db.commit()
     scope_sql, params = course_file_filter(user)
     return db.execute(f"{_SELECT} WHERE cf.id = %s AND ({scope_sql})", (created["id"], *params)).fetchone() | {
@@ -138,6 +139,7 @@ def create_course_files_bulk(body: CourseFileBulkIn, user: CurrentUser = Depends
             raise HTTPException(exc.status_code, f"Item {index + 1}: {exc.detail}")
         _audit_created(db, user, created, item)
         out.append({"id": created["id"], "submission_rows": created["submission_rows"]})
+    score_store.refresh_course_files(db, [o["id"] for o in out], trigger="course_file_created", now=clock.utcnow())
     db.commit()
     return {"created": len(out), "course_files": out}
 

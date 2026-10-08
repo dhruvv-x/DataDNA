@@ -29,7 +29,7 @@ from datetime import datetime, timedelta, timezone
 
 from psycopg.types.json import Jsonb
 
-from app.core import auditlog
+from app.core import auditlog, score_store
 
 IST = timezone(timedelta(hours=5, minutes=30))
 STATE_KINDS = ("MISSING", "INCOMPLETE")
@@ -164,8 +164,11 @@ def _log(db, action: str, flag_id, payload: dict, trigger: str, by_user=None):
 
 
 def evaluate_submission(db, submission_id: uuid.UUID, *, now: datetime, trigger: str,
-                        new_version: dict | None = None, by_user=None) -> list[dict]:
-    """Apply decide() to one submission. Takes the submission row lock first. Returns what changed."""
+                        new_version: dict | None = None, by_user=None, refresh_scores: bool = True) -> list[dict]:
+    """
+    Apply decide() to one submission. Takes the submission row lock first. Returns what changed.
+    Afterwards the trust score of its course file is refreshed (S6), unless the caller does that itself.
+    """
     facts = db.execute(_FACTS, (submission_id,)).fetchone()
     if facts is None:
         return []
@@ -197,16 +200,21 @@ def evaluate_submission(db, submission_id: uuid.UUID, *, now: datetime, trigger:
         if row:
             _log(db, "flag.raise", row["id"], {"kind": item["kind"], "submission_id": str(submission_id), "reason": item["reason"]}, trigger, by_user)
             changes.append({"action": "raise", "kind": item["kind"], "flag_id": row["id"]})
+    if refresh_scores:
+        score_store.refresh_for_submissions(db, [submission_id], trigger=trigger, now=now)
     return changes
 
 
-def evaluate_many(db, submission_ids, *, now: datetime, trigger: str, by_user=None) -> dict:
+def evaluate_many(db, submission_ids, *, now: datetime, trigger: str, by_user=None, refresh_scores: bool = True) -> dict:
     counts = {"checked": 0, "raised": 0, "cleared": 0}
-    for sid in submission_ids:
-        changes = evaluate_submission(db, sid, now=now, trigger=trigger, by_user=by_user)
+    ids = list(submission_ids)
+    for sid in ids:
+        changes = evaluate_submission(db, sid, now=now, trigger=trigger, by_user=by_user, refresh_scores=False)
         counts["checked"] += 1
         counts["raised"] += sum(1 for c in changes if c["action"] == "raise")
         counts["cleared"] += sum(1 for c in changes if c["action"] == "clear")
+    if refresh_scores:  # once per course file, not once per item
+        score_store.refresh_for_submissions(db, ids, trigger=trigger, now=now)
     return counts
 
 
@@ -252,10 +260,13 @@ def sweep(db, *, now: datetime, semester_id=None, trigger: str = "sweep", by_use
                 """, (sem, now)).fetchall()
             db.commit()
             for row in candidates:
-                counts = evaluate_many(db, [row["id"]], now=now, trigger=trigger, by_user=by_user)
+                counts = evaluate_many(db, [row["id"]], now=now, trigger=trigger, by_user=by_user, refresh_scores=False)
                 db.commit()
                 for k in total:
                     total[k] += counts[k]
+            # Safety net: bring every score of this semester up to date once per sweep (writes only on change).
+            score_store.refresh_semester(db, sem, trigger=trigger, now=now)
+            db.commit()
         auditlog.write(db, actor_id=by_user, actor_role=by_role or "SYSTEM", action="rules.sweep",
                        entity_type="rules", entity_id=None, payload={**total, "trigger": trigger,
                                                                    "semesters": [str(s) for s in semester_ids]})
