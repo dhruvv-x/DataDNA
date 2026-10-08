@@ -64,3 +64,20 @@ code { font-family: var(--mono); font-size: 0.85em; }
 .modal { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.3rem; width: min(760px, 100%); max-height: 90vh; overflow: auto; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1rem; }
+
+.tabs { display: flex; gap: 0.3rem; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin: 0.6rem 0 1rem; }
+.tabs a { padding: 0.45rem 0.9rem; text-decoration: none; border: 1px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; color: var(--text); }
+.tabs a.active { border-color: var(--border); background: var(--bg-soft); color: var(--text-h); font-weight: 600; }
+.field select { padding: 0.55rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-h); font: inherit; }
+.field select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.inline-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.8rem; align-items: end; margin: 0.8rem 0 1.2rem; }
+.card + .card, .table-wrap + .card { margin-top: 1rem; }
+.checks { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; }
+.checks label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.9rem; }
+.secret { border: 1px dashed var(--accent); border-radius: 8px; padding: 0.6rem 0.9rem; margin: 0.6rem 0; background: var(--accent-bg); }
+.secret p { margin: 0.2rem 0; }
+.secret-code { font-size: 1.15rem; color: var(--text-h); user-select: all; }
+.input-narrow { width: 11rem; }
+.sum-ok { color: var(--good); }
+.sum-bad { color: var(--bad); }
+.toolbar { display: flex; gap: 0.8rem; align-items: end; flex-wrap: wrap; margin: 0.6rem 0; }

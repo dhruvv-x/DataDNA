@@ -134,11 +134,17 @@ export interface Flag {
   template_code: string | null
   template_title: string | null
   subject_code?: string
+  subject_name?: string
   faculty_name?: string
+  department_id?: string
+  department_code?: string
+  semester_id?: string
+  division?: string | null
   exceptions: { id: string; kind: string; reason: string; granted_at: string; granted_by_name: string }[]
 }
 
 export interface FlagList {
+  semester_id?: string | null
   total: number
   flags: Flag[]
 }
@@ -162,4 +168,119 @@ export interface UploadResult {
   message: string
   validation_status: string
   late: boolean
+}
+
+// ------------------------------------------------------------------ setup screens (S7b-1)
+export type Term = 'ODD' | 'EVEN'
+export type SubjectType = 'THEORY' | 'LAB' | 'THEORY_LAB'
+export type AppliesTo = 'THEORY' | 'LAB' | 'BOTH'
+
+export interface Department {
+  id: string
+  code: string
+  name: string
+}
+
+export interface Semester {
+  id: string
+  academic_year: string
+  term: Term
+  start_date: string
+  end_date: string
+  is_current: boolean
+}
+
+export interface Subject {
+  id: string
+  code: string
+  name: string
+  department_id: string
+  subject_type: SubjectType
+  is_active: boolean
+}
+
+export interface Template {
+  id: string
+  code: string
+  title: string
+  description: string
+  applies_to: AppliesTo
+  allowed_extensions: string[]
+  max_size_mb: number
+  sort_order: number
+  is_active: boolean
+}
+
+export interface DeadlineRow {
+  semester_id: string
+  template_id: string
+  template_code: string
+  title: string
+  due_at: string
+}
+
+export interface ManagedUser {
+  id: string
+  email: string
+  full_name: string
+  role: Role
+  department_id: string | null
+  department_code: string | null
+  employee_code: string | null
+  is_active: boolean
+  must_change_password: boolean
+  last_login_at: string | null
+}
+
+export interface CourseFileRow {
+  id: string
+  subject_id: string
+  subject_code: string
+  subject_name: string
+  semester_id: string
+  faculty_id: string
+  faculty_name: string
+  department_code: string
+  division: string | null
+}
+
+export interface WeightSet {
+  id: number
+  completeness: number
+  timeliness: number
+  format: number
+  content: number
+  reason: string | null
+  set_by_name: string | null
+  created_at: string
+}
+
+export interface WeightsView {
+  latest: WeightSet
+  current_semester: { semester_id: string; weights: WeightSet } | null
+  content_scoring_enabled: boolean
+  effective_for_current_semester?: Record<Part, number>
+}
+
+export interface WeightsSaved extends WeightsView {
+  applied_to_current_semester: boolean
+  message: string
+}
+
+export interface WeightsHistory {
+  weights: WeightSet[]
+  semester_assignments: { id: number; semester_id: string; academic_year: string; term: Term; weights_id: number; reason: string | null; created_at: string }[]
+}
+
+export interface WaiveResult {
+  flag_id: string
+  status: 'WAIVED'
+}
+
+export interface ExtensionResult {
+  late_flag_waived: string | null
+}
+
+export interface BulkWaiveResult {
+  waived: number
 }

@@ -2,17 +2,18 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { downloadVersion, getChecklist, getCourseFileFlags, getScore, getScoreHistory } from '../api/endpoints'
 import { ApiError } from '../api/client'
-import type { ChecklistRow, ScoreItem } from '../api/types'
+import type { ChecklistRow, Flag, ScoreItem } from '../api/types'
 import { PARTS } from '../api/types'
 import { useAuth } from '../auth/context'
 import { Badge, ErrorBox, Loading, StateBadge } from '../components/Feedback'
 import { PartBars } from '../components/PartBars'
 import { ScoreGauge } from '../components/ScoreGauge'
 import { Sparkline } from '../components/Sparkline'
+import { ExtendDialog, WaiveDialog } from '../components/ExceptionDialogs'
 import { UploadDialog } from '../components/UploadDialog'
 import { VersionsDialog } from '../components/VersionsDialog'
 import { KIND_LABEL, STATE_LABEL, formatDateTime, formatPoints, semesterLabel } from '../lib/format'
-import { canUpload } from '../lib/permissions'
+import { canGrantException, canUpload } from '../lib/permissions'
 import { useAsync } from '../lib/useAsync'
 
 export function CourseFilePage() {
@@ -24,6 +25,8 @@ export function CourseFilePage() {
   const history = useAsync(() => getScoreHistory(id), `hist:${id}`)
   const [uploadRow, setUploadRow] = useState<ChecklistRow | null>(null)
   const [versionsRow, setVersionsRow] = useState<ChecklistRow | null>(null)
+  const [extendRow, setExtendRow] = useState<ChecklistRow | null>(null)
+  const [waiveFlagRow, setWaiveFlagRow] = useState<Flag | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
   if (!user) return null
@@ -46,6 +49,7 @@ export function CourseFilePage() {
   const s = score.data
   if (!s) return <Loading what="Loading course file" />
 
+  const mayGrant = canGrantException(user.role, s.semester_is_current)
   const itemOf = new Map<string, ScoreItem>(s.items.map((i) => [i.submission_id, i]))
 
   async function download(row: ChecklistRow) {
@@ -132,6 +136,7 @@ export function CourseFilePage() {
                       )}
                       {r.current_version_id && <button className="btn btn-small" onClick={() => void download(r)}>Download</button>}
                       {r.version_count > 0 && <button className="btn btn-small" onClick={() => setVersionsRow(r)}>Versions</button>}
+                      {mayGrant && r.due_at && <button className="btn btn-small" onClick={() => setExtendRow(r)}>Extend deadline</button>}
                     </td>
                   </tr>
                 )
@@ -154,6 +159,9 @@ export function CourseFilePage() {
               </div>
               <div>{f.reason}</div>
               <div className="muted small">Raised {formatDateTime(f.raised_at)}{f.cleared_at && `, cleared ${formatDateTime(f.cleared_at)}`}</div>
+              {mayGrant && f.status === 'OPEN' && f.kind !== 'ANOMALY' && (
+                <div><button className="btn btn-small" onClick={() => setWaiveFlagRow(f)}>Waive</button></div>
+              )}
               {f.exceptions.map((e) => (
                 <div key={e.id} className="muted small">{e.kind === 'WAIVER' ? 'Waived' : 'Extension'} by {e.granted_by_name} on {formatDateTime(e.granted_at)}: {e.reason}</div>
               ))}
@@ -183,6 +191,23 @@ export function CourseFilePage() {
         <UploadDialog row={uploadRow} role={user.role} onClose={() => setUploadRow(null)} onUploaded={reloadAll} />
       )}
       {versionsRow && <VersionsDialog row={versionsRow} onClose={() => setVersionsRow(null)} />}
+      {extendRow && (
+        <ExtendDialog
+          submissionId={extendRow.submission_id}
+          label={`${extendRow.code} ${extendRow.title}`}
+          effectiveDueAt={extendRow.effective_due_at}
+          onClose={() => setExtendRow(null)}
+          onDone={reloadAll}
+        />
+      )}
+      {waiveFlagRow && (
+        <WaiveDialog
+          flagId={waiveFlagRow.id}
+          label={`${KIND_LABEL[waiveFlagRow.kind]}${waiveFlagRow.template_code ? ` ${waiveFlagRow.template_code}` : ''}`}
+          onClose={() => setWaiveFlagRow(null)}
+          onDone={reloadAll}
+        />
+      )}
     </>
   )
 }

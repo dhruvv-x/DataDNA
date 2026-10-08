@@ -30,3 +30,33 @@ export function checkFileBeforeUpload(file: File, allowedExtensions: string[], m
   if (file.size > maxMb * 1024 * 1024) return `The file is larger than ${maxMb} MB.`
   return null
 }
+
+/** Which setup tabs a role sees. The server still decides for real. DEAN: everything. HOD: people of the own department. */
+export type SetupTab = 'departments' | 'semesters' | 'subjects' | 'checklist' | 'users' | 'course-files' | 'weights'
+
+export function setupTabs(role: Role): SetupTab[] {
+  if (role === 'DEAN') return ['departments', 'semesters', 'subjects', 'checklist', 'users', 'course-files', 'weights']
+  if (role === 'HOD') return ['users']
+  return []
+}
+
+export function canOpenSetup(role: Role): boolean {
+  return setupTabs(role).length > 0
+}
+
+/** Waive a flag or extend a deadline. FACULTY never. HOD only in the current semester. DEAN anywhere. The server repeats the check. */
+export function canGrantException(role: Role, semesterIsCurrent: boolean): boolean {
+  if (role === 'DEAN') return true
+  if (role === 'HOD') return semesterIsCurrent
+  return false
+}
+
+/** Set aside every late flag of one checklist item at once. Dean only. */
+export function canWaiveLate(role: Role): boolean {
+  return role === 'DEAN'
+}
+
+/** The flags list page. Faculty see their flags on their own course files only. */
+export function canOpenFlagsPage(role: Role): boolean {
+  return role === 'HOD' || role === 'DEAN'
+}

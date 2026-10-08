@@ -226,3 +226,12 @@ Built and prioritized under a hard deadline. The following are intentionally out
 - Zero-knowledge proofs for privacy-preserving verification
 
 These are natural extensions once the core pipeline is validated, not fundamental limitations of the architecture.
+
+
+## Demo data (development only)
+
+On a fresh database, `python -m app.core.seed_demo` makes 2 departments, a current semester, 8 subjects, 19 placeholder checklist items, 2 HODs, 4 faculty and 8 course files, and prints the logins once. It refuses to run when `APP_ENV=production` or when the demo departments already exist.
+
+`python -m app.core.add_demo_users` adds one more department (EE) with a HOD and a faculty member to an already seeded database. It is safe to run again. Both scripts are for demos and tests, never for a real deployment.
+
+Frontend needs Node 22.12 or newer (`frontend/.nvmrc` says 24). With nvm: `nvm install` then `nvm use`.

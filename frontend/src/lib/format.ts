@@ -77,3 +77,23 @@ export function stateTone(state: string): 'good' | 'warn' | 'bad' | 'muted' {
 export function semesterLabel(year: string, term: string): string {
   return `${year} ${term === 'ODD' ? 'Odd' : term === 'EVEN' ? 'Even' : term}`
 }
+
+// ------------------------------------------------------------------ India time for deadline inputs
+const IST_MS = 5.5 * 60 * 60 * 1000
+
+/** "2026-09-30T17:00" typed in a datetime-local box (India time) -> "2026-09-30T17:00:00+05:30" (the server needs a time zone). */
+export function istInputToIso(local: string): string {
+  return `${local}:00+05:30`
+}
+
+/** An ISO moment -> "2026-09-30T17:00" in India time, for a datetime-local box. */
+export function isoToIstInput(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return ''
+  return new Date(t + IST_MS).toISOString().slice(0, 16)
+}
+
+export const SUBJECT_TYPE_LABEL = { THEORY: 'Theory', LAB: 'Lab', THEORY_LAB: 'Theory + Lab' } as const
+export const APPLIES_LABEL = { THEORY: 'Theory only', LAB: 'Lab only', BOTH: 'Theory and lab' } as const
+export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'csv', 'txt', 'png', 'jpg', 'jpeg']
