@@ -186,6 +186,56 @@ def list_flags(course_file_id: uuid.UUID, status: str | None = Query(default=Non
     return _with_exceptions(db, flags)
 
 
+@router.get("/flags")
+def list_all_flags(
+    status: str | None = Query(default=None, pattern="^(OPEN|CLEARED|WAIVED)$"),
+    kind: str | None = Query(default=None, pattern="^(LATE|MISSING|INCOMPLETE|FORMAT|CONTENT|MISMATCH|ANOMALY)$"),
+    semester_id: uuid.UUID | None = None,
+    department_id: uuid.UUID | None = None,
+    course_file_id: uuid.UUID | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(current_user),
+    db=Depends(get_db),
+):
+    """Flags across every course file the caller may see (dashboards). Defaults to the current semester."""
+    scope_sql, params = course_file_filter(user)
+    if semester_id is None:
+        cur = db.execute("SELECT id FROM semesters WHERE is_current").fetchone()
+        if cur is None:
+            return {"semester_id": None, "total": 0, "limit": limit, "offset": offset, "flags": []}
+        semester_id = cur["id"]
+    elif db.execute("SELECT 1 FROM semesters WHERE id = %s", (semester_id,)).fetchone() is None:
+        raise not_found()
+    where, args = [f"({scope_sql})", "cf.semester_id = %s"], [*params, semester_id]
+    for column, value in (("f.status", status), ("f.kind", kind), ("cf.department_id", department_id),
+                          ("f.course_file_id", course_file_id)):
+        if value is not None:
+            where.append(f"{column} = %s")
+            args.append(value)
+    cond = " AND ".join(where)
+    total = db.execute(f"SELECT count(*) AS n FROM flags f JOIN course_files cf ON cf.id = f.course_file_id WHERE {cond}",
+                       args).fetchone()["n"]
+    flags = db.execute(
+        f"""SELECT f.id, f.course_file_id, f.submission_id, f.kind, f.status, f.reason, f.detail,
+                   f.raised_at, f.cleared_at, t.code AS template_code, t.title AS template_title,
+                   cf.semester_id, cf.department_id, d.code AS department_code,
+                   s.code AS subject_code, s.name AS subject_name, cf.division,
+                   cf.faculty_id, u.full_name AS faculty_name
+            FROM flags f
+            JOIN course_files cf ON cf.id = f.course_file_id
+            JOIN subjects s ON s.id = cf.subject_id
+            JOIN users u ON u.id = cf.faculty_id
+            JOIN departments d ON d.id = cf.department_id
+            LEFT JOIN submissions sub ON sub.id = f.submission_id
+            LEFT JOIN checklist_templates t ON t.id = sub.template_id
+            WHERE {cond}
+            ORDER BY f.raised_at DESC, f.id
+            LIMIT %s OFFSET %s""", (*args, limit, offset)).fetchall()
+    return {"semester_id": semester_id, "total": total, "limit": limit, "offset": offset,
+            "flags": _with_exceptions(db, flags)}
+
+
 @router.get("/flags/{flag_id}")
 def get_flag(flag_id: uuid.UUID, user: CurrentUser = Depends(current_user), db=Depends(get_db)):
     scope_sql, params = course_file_filter(user)

@@ -1,35 +1,35 @@
 #!/bin/bash
 set -e
 
-echo "=== 1. Starting Fabric containers ==="
-docker start peer0.org1.example.com peer0.org2.example.com orderer.example.com ca_org1 ca_org2 ca_orderer 2>&1 || true
+echo "=== 1. Starting Fabric containers (only peers and orderer exist) ==="
+docker start peer0.org1.example.com peer0.org2.example.com orderer.example.com 2>&1 || true
 
-echo "=== 2. Waiting for containers to stabilize (15s) ==="
+echo "=== 2. Starting PostgreSQL ==="
+cd ~/datadna && docker compose up -d db
+
+echo "=== 3. Waiting for containers to stabilize (15s) ==="
 sleep 15
 
-echo "=== 3. Detecting WSL IP ==="
-WSL_IP=$(ip addr show eth0 | grep "inet " | awk '{print $2}' | cut -d/ -f1)
-echo "WSL IP: $WSL_IP"
-
 echo "=== 4. Writing frontend API address to .env.local ==="
-echo "VITE_API_BASE=http://${WSL_IP}:8000" > ~/datadna/frontend/.env.local
-echo "Frontend will use: http://${WSL_IP}:8000 (restart npm run dev if it is already running)"
+# The browser calls /api on the same address as the page. The Vite dev server forwards it to port 8000.
+echo "VITE_API_BASE=/api" > ~/datadna/frontend/.env.local
 
 echo "=== 5. Starting backend (background) ==="
 cd ~/datadna/backend
 source venv/bin/activate
-nohup uvicorn app.main:app --reload --port 8000 --host 0.0.0.0 > /tmp/backend.log 2>&1 &
+nohup uvicorn app.main:app --reload --port 8000 --host 127.0.0.1 > /tmp/backend.log 2>&1 &
 echo "Backend starting... (log: /tmp/backend.log)"
 
 sleep 3
 
 echo "=== 6. Testing backend ==="
-curl -s "http://${WSL_IP}:8000/health" > /dev/null && echo "Backend OK" || echo "Backend NOT responding yet, check /tmp/backend.log"
+curl -s "http://127.0.0.1:8000/health" > /dev/null && echo "Backend OK" || echo "Backend NOT responding yet, check /tmp/backend.log"
 
 echo ""
 echo "=== DONE ==="
-echo "Backend: http://${WSL_IP}:8000"
-echo "Now run frontend manually in a new terminal:"
+echo "Backend API docs: http://localhost:8000/docs"
+echo "Now run the frontend in a new terminal:"
 echo "  cd ~/datadna/frontend && npm run dev"
+echo "Then open http://localhost:5173"
 echo ""
-echo "If ca_org2 shows an error above, ignore it — not needed for the demo."
+echo "Needs COOKIE_PATH=/api/auth in ~/datadna/.env (see .env.example)."
