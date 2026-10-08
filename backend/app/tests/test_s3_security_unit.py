@@ -104,6 +104,24 @@ def test_expired_token_rejected():
         security.decode_access_token(token)
 
 
+def test_token_issued_a_few_seconds_ahead_is_accepted():
+    # a clock that stepped back 5 seconds between login and use must not cause a logout
+    token = security.create_access_token(uuid.uuid4(), NOW, now=datetime.now(timezone.utc) + timedelta(seconds=5))
+    assert security.decode_access_token(token)["typ"] == "access"
+
+
+def test_token_issued_far_in_the_future_is_rejected():
+    token = security.create_access_token(uuid.uuid4(), NOW, now=datetime.now(timezone.utc) + timedelta(minutes=5))
+    with pytest.raises(security.TokenError):
+        security.decode_access_token(token)
+
+
+def test_token_just_past_its_expiry_plus_leeway_is_rejected():
+    token = security.create_access_token(uuid.uuid4(), NOW, now=datetime.now(timezone.utc) - timedelta(minutes=30, seconds=60))
+    with pytest.raises(security.TokenError):
+        security.decode_access_token(token)
+
+
 def test_tampered_token_rejected():
     token = security.create_access_token(uuid.uuid4(), NOW)
     head, body, sig = token.split(".")

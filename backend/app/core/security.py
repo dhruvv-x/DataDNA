@@ -102,6 +102,11 @@ def create_access_token(user_id: uuid.UUID, password_changed_at: datetime, now: 
     return jwt.encode(payload, settings.jwt_secret(), algorithm=ALGORITHM)
 
 
+# Newer PyJWT versions refuse a token whose issue time lies even one second in the future. A computer clock
+# that steps back a little (WSL2 after sleep, a time sync) would then reject a token that was just issued.
+CLOCK_LEEWAY_SECONDS = 10
+
+
 def decode_access_token(token: str) -> dict:
     """Returns the claims, or raises TokenError. Only HS256 is accepted (never 'none')."""
     try:
@@ -110,6 +115,7 @@ def decode_access_token(token: str) -> dict:
             settings.jwt_secret(),
             algorithms=[ALGORITHM],
             options={"require": ["exp", "iat", "sub", "typ", "pv"]},
+            leeway=CLOCK_LEEWAY_SECONDS,
         )
     except jwt.PyJWTError as exc:
         raise TokenError(str(exc)) from exc

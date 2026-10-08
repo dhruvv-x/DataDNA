@@ -246,7 +246,7 @@ def test_faculty_cannot_deactivate_anyone(client, world):
 def test_deactivation_revokes_sessions_and_blocks_login(client, new_client, world, db):
     victim = new_client()
     token = login(victim, world["fac_x1"]).json()["access_token"]
-    set_active(client, world["hod_x"], world["fac_x1"], False)
+    assert set_active(client, world["hod_x"], world["fac_x1"], False).status_code == 200  # if this is 401, the HOD token failed, not the revoke
     assert victim.get("/auth/me", headers=auth(token)).status_code == 401
     assert victim.post("/auth/refresh").status_code == 401
     assert login(client, world["fac_x1"]).status_code == 401
