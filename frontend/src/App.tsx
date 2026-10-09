@@ -8,6 +8,8 @@ import { FlagsPage } from './pages/FlagsPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { QueriesPage } from './pages/QueriesPage'
+import { QueryPage } from './pages/QueryPage'
 import { ChecklistPage } from './pages/setup/ChecklistPage'
 import { CourseFilesSetupPage } from './pages/setup/CourseFilesSetupPage'
 import { DeadlinesPage } from './pages/setup/DeadlinesPage'
@@ -28,6 +30,8 @@ export default function App() {
           <Route element={<Layout />}>
             <Route index element={<HomePage />} />
             <Route path="course-files/:id" element={<CourseFilePage />} />
+            <Route path="queries" element={<QueriesPage />} />
+            <Route path="queries/:id" element={<QueryPage />} />
             <Route element={<RequireRole roles={['HOD', 'DEAN']} />}>
               <Route path="flags" element={<FlagsPage />} />
             </Route>

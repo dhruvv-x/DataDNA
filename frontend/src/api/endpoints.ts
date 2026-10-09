@@ -1,6 +1,6 @@
 import { downloadFile, request } from './client'
 import type {
-  AppliesTo, BulkWaiveResult, ExtensionResult, FlagKind, WaiveResult, ChecklistRow, CourseFileRow, DeadlineRow, Department, Flag, FlagList, FlagStatus, ManagedUser, Role,
+  AppliesTo, BulkWaiveResult, QueryCount, QueryDetail, QueryList, QueryStatus, QueryLevel, ExtensionResult, FlagKind, WaiveResult, ChecklistRow, CourseFileRow, DeadlineRow, Department, Flag, FlagList, FlagStatus, ManagedUser, Role,
   ScoreList, ScoreView, Semester, SnapshotRow, Subject, SubjectType, Template, Term, UploadResult, Version,
   WeightsHistory, WeightsSaved, WeightsView,
 } from './types'
@@ -40,6 +40,18 @@ export const grantExtension = (submissionId: string, newDueAt: string, reason: s
   request<ExtensionResult>(`/submissions/${submissionId}/extensions`, { method: 'POST', json: { new_due_at: newDueAt, reason } })
 export const waiveAllLate = (semesterId: string, templateId: string, reason: string) =>
   request<BulkWaiveResult>(`/semesters/${semesterId}/waive-late`, { method: 'POST', json: { template_id: templateId, reason } })
+
+// ------------------------------------------------------------------ queries / disputes (S8). The server decides who may do what.
+export const listQueries = (params: { status?: QueryStatus; level?: QueryLevel; course_file_id?: string; waiting_for_me?: boolean; limit?: number } = {}) =>
+  request<QueryList>(`/queries${qs({ ...params, waiting_for_me: params.waiting_for_me ? 'true' : undefined })}`)
+export const getQuery = (id: string) => request<QueryDetail>(`/queries/${id}`)
+export const getQueryCount = () => request<QueryCount>('/queries/count')
+export const raiseQuery = (flagId: string, message: string) => request<QueryDetail>(`/flags/${flagId}/queries`, { method: 'POST', json: { message } })
+export const replyToQuery = (id: string, message: string) => request<QueryDetail>(`/queries/${id}/reply`, { method: 'POST', json: { message } })
+export const escalateQuery = (id: string, message: string) => request<QueryDetail>(`/queries/${id}/escalate`, { method: 'POST', json: { message } })
+export const resolveQuery = (id: string, outcome: 'UPHELD' | 'OVERTURNED', message: string) =>
+  request<QueryDetail>(`/queries/${id}/resolve`, { method: 'POST', json: { outcome, message } })
+export const appealQuery = (id: string, message: string) => request<QueryDetail>(`/queries/${id}/appeal`, { method: 'POST', json: { message } })
 
 // ------------------------------------------------------------------ setup (S7b-1). The server decides who may do what.
 const post = <T>(path: string, json: unknown) => request<T>(path, { method: 'POST', json })

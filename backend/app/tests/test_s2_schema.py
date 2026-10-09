@@ -459,13 +459,17 @@ def test_only_one_open_query_per_flag(pg):
             "INSERT INTO queries (flag_id, raised_by) VALUES (%s,%s)", (f, w["faculty"]))
 
 
-def test_resolved_query_needs_resolved_time_and_allows_a_new_one(pg):
+def test_resolved_query_needs_time_and_resolver_and_a_flag_keeps_one_query_for_life(pg):
+    # S8 (0006) tightened this: a decision names who decided, and a flag is never argued twice.
     w = world(pg)
     f = mk_flag(pg, w["cf"], w["sub"], kind="FORMAT")
     qid = q1(pg, "INSERT INTO queries (flag_id, raised_by) VALUES (%s,%s) RETURNING id", (f, w["faculty"]))["id"]
     rejects(pg, errors.CheckViolation, "UPDATE queries SET status='RESOLVED_UPHELD' WHERE id=%s", (qid,))
-    pg.execute("UPDATE queries SET status='RESOLVED_UPHELD', resolved_at=now() WHERE id=%s", (qid,))
-    pg.execute("INSERT INTO queries (flag_id, raised_by) VALUES (%s,%s)", (f, w["faculty"]))
+    rejects(pg, errors.CheckViolation,
+            "UPDATE queries SET status='RESOLVED_UPHELD', resolved_at=now() WHERE id=%s", (qid,))
+    pg.execute("UPDATE queries SET status='RESOLVED_UPHELD', resolved_at=now(), resolved_by=%s, resolved_level='HOD' "
+               "WHERE id=%s", (w["faculty"], qid))
+    rejects(pg, errors.UniqueViolation, "INSERT INTO queries (flag_id, raised_by) VALUES (%s,%s)", (f, w["faculty"]))
 
 
 def test_query_level_and_step_action_are_checked(pg):
@@ -475,9 +479,10 @@ def test_query_level_and_step_action_are_checked(pg):
             "INSERT INTO queries (flag_id, raised_by, current_level) VALUES (%s,%s,'PRINCIPAL')", (f, w["faculty"]))
     qid = q1(pg, "INSERT INTO queries (flag_id, raised_by) VALUES (%s,%s) RETURNING id", (f, w["faculty"]))["id"]
     rejects(pg, errors.CheckViolation,
-            "INSERT INTO query_steps (query_id, actor_id, action, message) VALUES (%s,%s,'SHOUT','hi')", (qid, w["faculty"]))
-    pg.execute("INSERT INTO query_steps (query_id, actor_id, action, message) VALUES (%s,%s,'RAISE','please check')",
-               (qid, w["faculty"]))
+            "INSERT INTO query_steps (query_id, actor_id, actor_role, level, action, message) "
+            "VALUES (%s,%s,'FACULTY','HOD','SHOUT','hi')", (qid, w["faculty"]))
+    pg.execute("INSERT INTO query_steps (query_id, actor_id, actor_role, level, action, message) "
+               "VALUES (%s,%s,'FACULTY','HOD','RAISE','please check')", (qid, w["faculty"]))
 
 
 # ----------------------------------------------------------------------------

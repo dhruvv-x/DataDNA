@@ -31,7 +31,7 @@ class FakeClock:
 def clk(monkeypatch):
     clock = FakeClock()
     fake = SimpleNamespace(utcnow=lambda: clock.now)
-    for module in ("app.api.submissions", "app.api.rules", "app.api.master"):
+    for module in ("app.api.submissions", "app.api.rules", "app.api.master", "app.api.queries"):
         monkeypatch.setattr(f"{module}.clock", fake)
     return clock
 

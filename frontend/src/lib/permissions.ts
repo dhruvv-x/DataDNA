@@ -60,3 +60,14 @@ export function canWaiveLate(role: Role): boolean {
 export function canOpenFlagsPage(role: Role): boolean {
   return role === 'HOD' || role === 'DEAN'
 }
+
+/**
+ * Offer "Dispute this flag": only the owner of the course file, on an open flag that has no query yet,
+ * in the current semester. The Dean never raises. The server repeats every check.
+ */
+export function canRaiseQuery(role: Role, userId: string, ownerId: string, flagIsOpen: boolean, semesterIsCurrent: boolean, hasQuery: boolean): boolean {
+  return role !== 'DEAN' && userId === ownerId && flagIsOpen && semesterIsCurrent && !hasQuery
+}
+
+/** The queries page is for everybody: faculty see their own, HOD their department, Dean all. */
+export const MIN_QUERY_MESSAGE = 10

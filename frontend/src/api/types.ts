@@ -284,3 +284,76 @@ export interface ExtensionResult {
 export interface BulkWaiveResult {
   waived: number
 }
+
+// ------------------------------------------------------------------ queries / disputes (S8)
+export type QueryLevel = 'HOD' | 'DEAN'
+export type QueryStatus = 'OPEN' | 'RESOLVED_UPHELD' | 'RESOLVED_OVERTURNED'
+export type QueryAction = 'RAISE' | 'REPLY' | 'ESCALATE' | 'APPEAL' | 'RESOLVE'
+
+/** What the server says the caller may do with a query right now. The screen never guesses. */
+export interface QueryCan {
+  reply: boolean
+  escalate: boolean
+  resolve: boolean
+  appeal: boolean
+  override: boolean
+}
+
+export interface QueryStep {
+  id: string
+  action: QueryAction
+  level: QueryLevel
+  actor_id: string
+  actor_name: string
+  actor_role: Role
+  override: boolean
+  outcome: 'UPHELD' | 'OVERTURNED' | null
+  message: string
+  created_at: string
+}
+
+export interface QueryRow {
+  id: string
+  flag_id: string
+  raised_by: string
+  raised_by_name: string
+  raised_by_role: Role
+  current_level: QueryLevel
+  status: QueryStatus
+  appealed: boolean
+  created_at: string
+  resolved_at: string | null
+  resolved_level: QueryLevel | null
+  last_activity_at: string
+  flag_kind: FlagKind
+  flag_status: FlagStatus
+  flag_reason: string
+  template_code: string | null
+  template_title: string | null
+  course_file_id: string
+  semester_is_current: boolean
+  department_code: string
+  division: string | null
+  faculty_id: string
+  faculty_name: string
+  subject_code: string
+  subject_name: string
+  last_actor_role?: Role | null
+  can: QueryCan
+}
+
+export interface QueryDetail extends Omit<QueryRow, 'can' | 'last_actor_role'> {
+  steps: QueryStep[]
+  can: QueryCan
+  flag_change?: string
+}
+
+export interface QueryList {
+  total: number
+  queries: QueryRow[]
+}
+
+export interface QueryCount {
+  waiting_for_me: number
+  open: number
+}

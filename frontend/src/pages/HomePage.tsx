@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getFlags, getScores, listDepartments, listSemesters, listSubjects } from '../api/endpoints'
+import { getFlags, getQueryCount, getScores, listDepartments, listSemesters, listSubjects } from '../api/endpoints'
 import { useAuth } from '../auth/context'
 import { SelectField } from '../components/Fields'
 import { ErrorBox, Loading } from '../components/Feedback'
@@ -33,6 +33,8 @@ export function HomePage() {
     () => getFlags({ status: 'OPEN', limit: 1, semester_id: semesterId, department_id: departmentId }),
     `open-flags:${semesterId}|${departmentId}`,
   )
+  // Only shown when it loaded. A failure here must never hide the scores.
+  const queries = useAsync(() => getQueryCount(), `home-queries:${semesterId}`)
   if (!user) return null
 
   let rows = scores.data?.scores ?? []
@@ -100,6 +102,15 @@ export function HomePage() {
               <div className="card stat"><div className="stat-n">{problemsOfRows}</div><div className="muted">Open problems</div></div>
             )}
           </div>
+          {queries.data && (queries.data.open > 0 || user.role !== 'FACULTY') && (
+            <p>
+              <Link to={user.role === 'FACULTY' ? '/queries' : '/queries?waiting=1'}>
+                {queries.data.waiting_for_me > 0
+                  ? `${queries.data.waiting_for_me} ${queries.data.waiting_for_me === 1 ? 'query is' : 'queries are'} waiting for you`
+                  : `Queries (${queries.data.open} open)`}
+              </Link>
+            </p>
+          )}
           {canOpenFlagsPage(user.role) && <p><Link to="/flags">See all flags</Link></p>}
           {rows.length === 0 ? (
             <div className="card">

@@ -81,3 +81,8 @@ code { font-family: var(--mono); font-size: 0.85em; }
 .sum-ok { color: var(--good); }
 .sum-bad { color: var(--bad); }
 .toolbar { display: flex; gap: 0.8rem; align-items: end; flex-wrap: wrap; margin: 0.6rem 0; }
+
+/* ---- queries (S8) ---- */
+.timeline { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.5rem; }
+.timeline .card { margin: 0; }
+.query-message { margin: 0.35rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }

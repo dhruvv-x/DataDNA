@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { downloadVersion, getChecklist, getCourseFileFlags, getScore, getScoreHistory } from '../api/endpoints'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { downloadVersion, getChecklist, getCourseFileFlags, getScore, getScoreHistory, listQueries } from '../api/endpoints'
 import { ApiError } from '../api/client'
 import type { ChecklistRow, Flag, ScoreItem } from '../api/types'
 import { PARTS } from '../api/types'
@@ -10,10 +10,11 @@ import { PartBars } from '../components/PartBars'
 import { ScoreGauge } from '../components/ScoreGauge'
 import { Sparkline } from '../components/Sparkline'
 import { ExtendDialog, WaiveDialog } from '../components/ExceptionDialogs'
+import { RaiseQueryDialog } from '../components/RaiseQueryDialog'
 import { UploadDialog } from '../components/UploadDialog'
 import { VersionsDialog } from '../components/VersionsDialog'
-import { KIND_LABEL, STATE_LABEL, formatDateTime, formatPoints, semesterLabel } from '../lib/format'
-import { canGrantException, canUpload } from '../lib/permissions'
+import { KIND_LABEL, STATE_LABEL, formatDateTime, formatPoints, queryStatusText, semesterLabel } from '../lib/format'
+import { canGrantException, canRaiseQuery, canUpload } from '../lib/permissions'
 import { useAsync } from '../lib/useAsync'
 
 export function CourseFilePage() {
@@ -23,6 +24,10 @@ export function CourseFilePage() {
   const checklist = useAsync(() => getChecklist(id), `check:${id}`)
   const flags = useAsync(() => getCourseFileFlags(id), `flags:${id}`)
   const history = useAsync(() => getScoreHistory(id), `hist:${id}`)
+  // Queries of this course file, so each flag can show its query. A failure here only hides that link.
+  const queries = useAsync(() => listQueries({ course_file_id: id, limit: 500 }), `cfqueries:${id}`)
+  const navigate = useNavigate()
+  const [disputeFlag, setDisputeFlag] = useState<Flag | null>(null)
   const [uploadRow, setUploadRow] = useState<ChecklistRow | null>(null)
   const [versionsRow, setVersionsRow] = useState<ChecklistRow | null>(null)
   const [extendRow, setExtendRow] = useState<ChecklistRow | null>(null)
@@ -36,6 +41,7 @@ export function CourseFilePage() {
     checklist.reload()
     flags.reload()
     history.reload()
+    queries.reload()
   }
 
   if (score.error) {
@@ -51,6 +57,7 @@ export function CourseFilePage() {
 
   const mayGrant = canGrantException(user.role, s.semester_is_current)
   const itemOf = new Map<string, ScoreItem>(s.items.map((i) => [i.submission_id, i]))
+  const queryOfFlag = new Map((queries.data?.queries ?? []).map((q) => [q.flag_id, q]))
 
   async function download(row: ChecklistRow) {
     setActionError(null)
@@ -162,6 +169,14 @@ export function CourseFilePage() {
               {mayGrant && f.status === 'OPEN' && f.kind !== 'ANOMALY' && (
                 <div><button className="btn btn-small" onClick={() => setWaiveFlagRow(f)}>Waive</button></div>
               )}
+              {(() => {
+                const q = queryOfFlag.get(f.id)
+                if (q) return <div><Link to={`/queries/${q.id}`}>Query: {queryStatusText(q).toLowerCase()}</Link></div>
+                if (canRaiseQuery(user.role, user.id, s.faculty_id, f.status === 'OPEN', s.semester_is_current, false)) {
+                  return <div><button className="btn btn-small" onClick={() => setDisputeFlag(f)}>Dispute this flag</button></div>
+                }
+                return null
+              })()}
               {f.exceptions.map((e) => (
                 <div key={e.id} className="muted small">{e.kind === 'WAIVER' ? 'Waived' : 'Extension'} by {e.granted_by_name} on {formatDateTime(e.granted_at)}: {e.reason}</div>
               ))}
@@ -198,6 +213,14 @@ export function CourseFilePage() {
           effectiveDueAt={extendRow.effective_due_at}
           onClose={() => setExtendRow(null)}
           onDone={reloadAll}
+        />
+      )}
+      {disputeFlag && (
+        <RaiseQueryDialog
+          flagId={disputeFlag.id}
+          label={`${KIND_LABEL[disputeFlag.kind]}${disputeFlag.template_code ? ` ${disputeFlag.template_code}` : ''}`}
+          onClose={() => setDisputeFlag(null)}
+          onRaised={(queryId) => navigate(`/queries/${queryId}`)}
         />
       )}
       {waiveFlagRow && (

@@ -1,4 +1,4 @@
-import type { FlagKind, ItemState, Part, Role } from '../api/types'
+import type { FlagKind, ItemState, Part, QueryAction, QueryDetail, QueryLevel, QueryRow, QueryStatus, Role } from '../api/types'
 
 const TZ = 'Asia/Kolkata'
 
@@ -97,3 +97,30 @@ export function isoToIstInput(iso: string | null | undefined): string {
 export const SUBJECT_TYPE_LABEL = { THEORY: 'Theory', LAB: 'Lab', THEORY_LAB: 'Theory + Lab' } as const
 export const APPLIES_LABEL = { THEORY: 'Theory only', LAB: 'Lab only', BOTH: 'Theory and lab' } as const
 export const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'csv', 'txt', 'png', 'jpg', 'jpeg']
+
+// ------------------------------------------------------------------ queries (S8)
+export const QUERY_STATUS_LABEL: Record<QueryStatus, string> = {
+  OPEN: 'Open',
+  RESOLVED_UPHELD: 'Decided: flag stays',
+  RESOLVED_OVERTURNED: 'Decided: flag overturned',
+}
+
+export const QUERY_LEVEL_LABEL: Record<QueryLevel, string> = { HOD: 'With the HOD', DEAN: 'With the Dean' }
+
+export const QUERY_ACTION_LABEL: Record<QueryAction, string> = {
+  RAISE: 'raised the query',
+  REPLY: 'replied',
+  ESCALATE: 'passed it to the Dean',
+  APPEAL: 'appealed to the Dean',
+  RESOLVE: 'decided',
+}
+
+export function queryTone(q: Pick<QueryRow | QueryDetail, 'status'>): 'warn' | 'good' | 'muted' {
+  if (q.status === 'OPEN') return 'warn'
+  return q.status === 'RESOLVED_OVERTURNED' ? 'good' : 'muted'
+}
+
+/** "With the HOD" while open, the decision once closed. */
+export function queryStatusText(q: Pick<QueryRow | QueryDetail, 'status' | 'current_level'>): string {
+  return q.status === 'OPEN' ? `Open, ${QUERY_LEVEL_LABEL[q.current_level].toLowerCase()}` : QUERY_STATUS_LABEL[q.status]
+}
